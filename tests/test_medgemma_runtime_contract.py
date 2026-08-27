@@ -41,7 +41,8 @@ def test_runtime_pins_schema_and_supports_offline_model_snapshot() -> None:
     # tests/test_runtime_response_contract.py. Counting occurrences of a source
     # string cannot distinguish a returned response field from an unrelated
     # mention, and it breaks whenever a legitimate new response path is added.
-    assert '"decoder": _decoder_metadata' in source
+    assert '"decoder": _decoder_identity()' in source
+    assert "def _decoder_identity()" in source
 
 
 def test_runtime_orders_dicom_by_geometry_and_maps_evidence_ids() -> None:

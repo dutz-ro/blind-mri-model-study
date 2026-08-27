@@ -63,6 +63,35 @@ _tokenizer_data = None
 _decoder_metadata = None
 
 
+def _decoder_identity() -> dict:
+    """Resolve the decoder contract without loading the model.
+
+    Decoder identity depends only on the canonical schema and the installed
+    enforcer version, not on the pipeline. Deriving it lazily here lets the
+    health endpoint and the capacity probes report the same decoder that
+    medical generation will use, instead of reporting null until the first
+    constrained-JSON call has happened.
+    """
+    global _decoder_metadata
+    if _decoder_metadata is None:
+        installed_version = importlib.metadata.version("lm-format-enforcer")
+        if installed_version != DECODER_VERSION:
+            raise RuntimeError(
+                "Installed constrained-decoder version differs from the approved version."
+            )
+        with open(RESULT_SCHEMA_PATH, encoding="utf-8") as handle:
+            _decoder_metadata = decoder_contract(json.load(handle))
+    return _decoder_metadata
+
+
+def _health_decoder_identity() -> dict | None:
+    """Health must stay reachable for diagnosis even when the decoder is unusable."""
+    try:
+        return _decoder_identity()
+    except Exception:
+        return None
+
+
 class DicomWebProbeRequest(BaseModel):
     study_uid: str
     series_uid: str
@@ -115,7 +144,7 @@ def health() -> dict:
         "cuda_available": torch.cuda.is_available(),
         "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "model_loaded": _pipeline is not None,
-        "decoder": _decoder_metadata,
+        "decoder": _health_decoder_identity(),
     }
 
 
@@ -434,7 +463,7 @@ def _run_synthetic_images(images: list[Image.Image], source_type: str) -> dict:
         "model_revision": MODEL_REVISION,
         "model_snapshot_manifest_sha256": MODEL_SNAPSHOT_MANIFEST_SHA256,
         "runtime_digest": RUNTIME_DIGEST,
-        "decoder": _decoder_metadata,
+        "decoder": _decoder_identity(),
         "approved_plan_sha256": APPROVED_PLAN_SHA256,
         "provision_plan_sha256": PROVISION_PLAN_SHA256,
         "cuda_available": torch.cuda.is_available(),
@@ -555,7 +584,7 @@ def synthetic_json_probe(request: SyntheticJsonProbeRequest) -> dict:
         "raw_text_length": len(raw_text),
         "starts_with_json_object": raw_text.lstrip().startswith("{"),
         "selected_semantic_sha256": decision.selected_semantic_sha256,
-        "decoder": _decoder_metadata,
+        "decoder": _decoder_identity(),
         "model": MODEL_ID,
         "model_revision": MODEL_REVISION,
         "model_snapshot_manifest_sha256": MODEL_SNAPSHOT_MANIFEST_SHA256,
@@ -667,7 +696,7 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
         "output_schema": request.output_schema,
         "prompt_sha256": request.prompt_sha256,
         "generation": request.generation,
-        "decoder": _decoder_metadata,
+        "decoder": _decoder_identity(),
         "raw_text": attempts[-1]["raw_text"],
         "result": parsed,
         "schema_status": "valid" if not schema_errors else "invalid",
