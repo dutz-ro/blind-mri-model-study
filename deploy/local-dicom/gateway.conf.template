@@ -1,0 +1,31 @@
+server {
+  listen 80;
+  server_name _;
+  client_max_body_size 64m;
+
+  location ~ ^/dicom-web/studies/[^/]+/series/[^/]+/instances/[^/]+$ {
+    proxy_pass http://orthanc:8042;
+    proxy_set_header Authorization "Basic ${ORTHANC_BASIC_AUTH}";
+    proxy_set_header Accept "multipart/related; type=application/dicom; transfer-syntax=*";
+    proxy_set_header Host $host;
+    proxy_request_buffering off;
+  }
+
+  location /dicom-web/ {
+    proxy_pass http://orthanc:8042/dicom-web/;
+    proxy_set_header Authorization "Basic ${ORTHANC_BASIC_AUTH}";
+    proxy_set_header Host $host;
+    proxy_request_buffering off;
+  }
+
+  location /wado {
+    proxy_pass http://orthanc:8042/wado;
+    proxy_set_header Authorization "Basic ${ORTHANC_BASIC_AUTH}";
+    proxy_set_header Host $host;
+  }
+
+  location / {
+    proxy_pass http://ohif:80;
+    proxy_set_header Host $host;
+  }
+}

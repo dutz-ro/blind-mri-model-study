@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mristudy.local/schemas/knee-meniscus-finding-v2.schema.json",
+  "title": "MRIStudy Knee Meniscus Finding v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "study_purpose", "findings", "global_limitations", "treatment_boundary"],
+  "properties": {
+    "schema_version": {"const": "knee-meniscus-finding-v2"},
+    "study_purpose": {"const": "exploratory_non_diagnostic"},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "global_limitations": {"type": "array", "items": {"type": "string"}},
+    "treatment_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["treatment_recommendation_provided", "repairability_determined", "vascularity_directly_measured"],
+      "properties": {
+        "treatment_recommendation_provided": {"const": false},
+        "repairability_determined": {"const": false},
+        "vascularity_directly_measured": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finding_id", "meniscus", "segment", "tear_status", "tear_pattern", "orientation", "vascular_zone_estimate", "capsular_relation", "surface_extension", "stability_features", "healing_context", "imaging_factors_for_specialist_review", "traceable_evidence", "counter_evidence", "limitations", "confidence"],
+      "properties": {
+        "finding_id": {"type": "string", "minLength": 1},
+        "meniscus": {"enum": ["medial", "lateral", "indeterminate"]},
+        "segment": {"enum": ["anterior_horn", "body", "posterior_horn", "anterior_root", "posterior_root", "multiple_segments", "indeterminate"]},
+        "tear_status": {"enum": ["absent", "suspected", "probable", "indeterminate", "not_evaluable"]},
+        "tear_pattern": {"enum": ["none", "horizontal", "vertical_longitudinal", "radial", "complex", "flap", "bucket_handle", "root_tear", "meniscocapsular", "other", "indeterminate"]},
+        "orientation": {"enum": ["horizontal", "vertical", "oblique", "radial", "multidirectional", "not_applicable", "indeterminate"]},
+        "vascular_zone_estimate": {"$ref": "#/$defs/vascularZone"},
+        "capsular_relation": {"$ref": "#/$defs/capsularRelation"},
+        "surface_extension": {"$ref": "#/$defs/surfaceExtension"},
+        "stability_features": {"$ref": "#/$defs/stabilityFeatures"},
+        "healing_context": {"$ref": "#/$defs/healingContext"},
+        "imaging_factors_for_specialist_review": {"type": "array", "items": {"type": "string"}},
+        "traceable_evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "counter_evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "limitations": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"enum": ["low", "medium", "high"]}
+      }
+    },
+    "vascularZone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["zone", "directly_observed_vascularity", "basis", "confidence", "limitations"],
+      "properties": {
+        "zone": {"enum": ["red_red", "red_white", "white_white", "junctional", "indeterminate"]},
+        "directly_observed_vascularity": {"const": false},
+        "basis": {"enum": ["estimated_from_meniscocapsular_distance", "estimated_from_peripheral_location", "insufficient_anatomic_resolution"]},
+        "confidence": {"enum": ["low", "medium", "high"]},
+        "limitations": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "capsularRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["distance_mm_estimate", "measurement_method", "peripheral_extension", "meniscocapsular_separation"],
+      "properties": {
+        "distance_mm_estimate": {"type": ["number", "null"], "minimum": 0},
+        "measurement_method": {"enum": ["geometry_calibrated", "visual_estimate", "not_measurable"]},
+        "peripheral_extension": {"enum": ["present", "absent", "indeterminate"]},
+        "meniscocapsular_separation": {"enum": ["present", "absent", "indeterminate"]}
+      }
+    },
+    "surfaceExtension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["superior", "inferior", "free_edge"],
+      "properties": {
+        "superior": {"enum": ["present", "absent", "indeterminate"]},
+        "inferior": {"enum": ["present", "absent", "indeterminate"]},
+        "free_edge": {"enum": ["present", "absent", "indeterminate"]}
+      }
+    },
+    "stabilityFeatures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displaced_fragment", "flap", "bucket_handle_pattern", "imaging_signs_of_mechanical_obstruction"],
+      "properties": {
+        "displaced_fragment": {"enum": ["present", "absent", "indeterminate"]},
+        "flap": {"enum": ["present", "absent", "indeterminate"]},
+        "bucket_handle_pattern": {"enum": ["present", "absent", "indeterminate"]},
+        "imaging_signs_of_mechanical_obstruction": {"enum": ["present", "absent", "indeterminate"]}
+      }
+    },
+    "healingContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tissue_quality_imaging_estimate", "chronicity_imaging_estimate", "extrusion_mm_estimate", "parameniscal_cyst", "root_involvement"],
+      "properties": {
+        "tissue_quality_imaging_estimate": {"enum": ["preserved_appearing", "degenerative_appearing", "indeterminate"]},
+        "chronicity_imaging_estimate": {"enum": ["acute_appearing", "chronic_appearing", "mixed", "indeterminate"]},
+        "extrusion_mm_estimate": {"type": ["number", "null"], "minimum": 0},
+        "parameniscal_cyst": {"enum": ["present", "absent", "indeterminate"]},
+        "root_involvement": {"enum": ["present", "absent", "indeterminate"]}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["export_id", "role", "description"],
+      "properties": {
+        "export_id": {"type": "string", "pattern": "^image-[0-9]{6}$"},
+        "role": {"enum": ["supporting", "counter", "context"]},
+        "description": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

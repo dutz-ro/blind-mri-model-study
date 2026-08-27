@@ -1,0 +1,46 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+*.log
+*.dcm
+*.dicom
+*.ima
+*.nii
+*.nii.gz
+*.nrrd
+*.mha
+*.mhd
+*.raw
+*.key
+*.pem
+*service-account*.json
+.scw/
+config.yaml
+stack.env
+data/
+studies/
+runs/
+reports/
+exports/
+anonymized-dicom/
+uid-map*.json
+
+# Source DICOM media and any extensionless imaging payloads (AGENTS.md #13).
+# DICOM instances are frequently stored without a file extension, so directory
+# level exclusion is required in addition to the suffix rules above.
+lex/
+DICOMDIR
+IM[0-9]*
+PS[0-9]*
+XX[0-9]*
+mri-study-data/
+mri-study-inputs/
+*.approval.json
+*-plan.json
+*-lock.json
+medgemma-results*.json
+scaleway-resources.json
+scaleway-ssh/

@@ -1,0 +1,30 @@
+#cloud-config
+package_update: true
+packages:
+  - autossh
+  - jq
+  - ca-certificates
+write_files:
+  - path: /etc/systemd/system/mristudy-hard-stop.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Emergency stop for temporary MRIStudy GPU
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/sbin/shutdown -h now
+  - path: /etc/systemd/system/mristudy-hard-stop.timer
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Stop temporary MRIStudy GPU after six hours
+      [Timer]
+      OnBootSec=6h
+      Unit=mristudy-hard-stop.service
+      [Install]
+      WantedBy=timers.target
+runcmd:
+  - mkdir -p /opt/mristudy /var/lib/mristudy/model-cache /var/lib/mristudy/dicom-cache
+  - chmod 700 /opt/mristudy /var/lib/mristudy/model-cache /var/lib/mristudy/dicom-cache
+  - systemctl daemon-reload
+  - systemctl enable --now mristudy-hard-stop.timer

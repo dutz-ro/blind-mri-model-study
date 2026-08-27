@@ -1,0 +1,11 @@
+services:
+  mristudy:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ${MRI_STUDY_DATA_ROOT:-${HOME}/mri-study-data}:/data
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+    environment:
+      MRI_STUDY_DATA_ROOT: /data

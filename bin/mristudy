@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -x "$ROOT/.venv/bin/mristudy" ]; then
+  exec "$ROOT/.venv/bin/mristudy" "$@"
+fi
+exec docker compose -f "$ROOT/compose.yaml" run --rm mristudy "$@"

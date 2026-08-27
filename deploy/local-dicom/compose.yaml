@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orthanc
+      POSTGRES_USER: orthanc
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - ${MRI_STUDY_ORTHANC_ROOT}/postgres:/var/lib/postgresql/data
+    networks:
+      dicom-private:
+        ipv4_address: 172.30.50.10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orthanc -d orthanc"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  orthanc:
+    image: orthancteam/orthanc:25.8.1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ORTHANC__NAME: MRIStudy Anonymous DICOM
+      ORTHANC__REMOTE_ACCESS_ALLOWED: "true"
+      ORTHANC__AUTHENTICATION_ENABLED: "true"
+      ORTHANC__REGISTERED_USERS: '{"mristudy":"${MRI_STUDY_ORTHANC_PASSWORD}"}'
+      ORTHANC__DICOM_WEB__ENABLE: "true"
+      ORTHANC__DICOM_WEB__ROOT: /dicom-web/
+      ORTHANC__DICOM_WEB__STUDIES_METADATA: Full
+      ORTHANC__DICOM_WEB__SERIES_METADATA: Full
+      ORTHANC__POSTGRESQL__HOST: postgres
+      ORTHANC__POSTGRESQL__PORT: "5432"
+      ORTHANC__POSTGRESQL__DATABASE: orthanc
+      ORTHANC__POSTGRESQL__USERNAME: orthanc
+      ORTHANC__POSTGRESQL__PASSWORD: ${MRI_STUDY_POSTGRES_PASSWORD}
+      ORTHANC__POSTGRESQL__ENABLE_INDEX: "true"
+      ORTHANC__POSTGRESQL__ENABLE_STORAGE: "false"
+      ORTHANC__DICOM_AET: MRISTUDY
+      ORTHANC__DICOM_PORT: "4242"
+      ORTHANC__HTTP_PORT: "8042"
+      ORTHANC__STABLE_AGE: "2"
+      ORTHANC__OVERWRITE_INSTANCES: "false"
+      ORTHANC_PASSWORD: ${MRI_STUDY_ORTHANC_PASSWORD}
+    volumes:
+      - ${MRI_STUDY_ORTHANC_ROOT}/storage:/var/lib/orthanc/db
+    ports:
+      - 127.0.0.1:18042:8042
+    networks:
+      dicom-private:
+        ipv4_address: 172.30.50.11
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c 'import socket;
+          s=socket.create_connection(("127.0.0.1",8042),5);
+          s.close()' || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  ohif:
+    image: ohif/app:v3.11.0
+    restart: unless-stopped
+    depends_on:
+      - orthanc
+    volumes:
+      - ./ohif-config.js:/usr/share/nginx/html/app-config.js
+    networks:
+      dicom-private:
+        ipv4_address: 172.30.50.12
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - orthanc
+      - ohif
+    environment:
+      ORTHANC_BASIC_AUTH: ${MRI_STUDY_ORTHANC_BASIC_AUTH}
+    volumes:
+      - ./gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - 127.0.0.1:13000:80
+    networks:
+      dicom-private:
+        ipv4_address: 172.30.50.13
+
+networks:
+  dicom-private:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.50.0/24
+
+secrets:
+  postgres_password:
+    file: ${MRI_STUDY_ORTHANC_ROOT}/secrets/postgres_password

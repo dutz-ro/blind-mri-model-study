@@ -1,0 +1,71 @@
+name: knee-meniscus-v1
+modality: MR
+anatomy: knee
+task: exploratory-meniscus-review
+preferred_series:
+  - pattern: "(?i)sag.*3d.*(pd|dp).*fs"
+    role: primary-volume
+  - pattern: "(?i)mpr.*sag.*(pd|dp).*fs"
+    role: sagittal-meniscus
+  - pattern: "(?i)mpr.*cor.*(pd|dp).*fs"
+    role: coronal-confirmation
+  - pattern: "(?i)mpr.*ax.*(pd|dp).*fs"
+    role: axial-confirmation
+  - pattern: "(?i)sag.*t1"
+    role: anatomy-correlation
+structures:
+  - medial_meniscus_anterior_horn
+  - medial_meniscus_body
+  - medial_meniscus_posterior_horn
+  - medial_meniscus_roots
+  - lateral_meniscus_anterior_horn
+  - lateral_meniscus_body
+  - lateral_meniscus_posterior_horn
+  - lateral_meniscus_roots
+statuses: [normal, suspect, positive, indeterminate, not_evaluable]
+output_schema: knee-meniscus-finding-v2
+medgemma_windowing:
+  enabled: true
+  maximum_window_size: 32
+  minimum_overlap: 8
+  require_complete_coverage: true
+  evidence_ids_scope: study_arm
+  ordering:
+    primary: dicom_geometry
+    fallback: instance_number_then_sop_instance_uid
+  excluded_series:
+    - pattern: "(?i)mpr.*smartknee"
+      reason: excluded_from_primary_meniscal_analysis
+tear_patterns:
+  - none
+  - horizontal
+  - vertical_longitudinal
+  - radial
+  - complex
+  - flap
+  - bucket_handle
+  - root_tear
+  - meniscocapsular
+  - other
+  - indeterminate
+vascular_zone_estimates:
+  - red_red
+  - red_white
+  - white_white
+  - junctional
+  - indeterminate
+vascularity_directly_observed: false
+treatment_recommendation_allowed: false
+repairability_determination_allowed: false
+specialist_review_factors:
+  - meniscocapsular_distance
+  - peripheral_extension
+  - surface_extension
+  - displaced_fragment
+  - flap
+  - bucket_handle_pattern
+  - root_involvement
+  - extrusion
+  - parameniscal_cyst
+  - tissue_quality_imaging_estimate
+  - chronicity_imaging_estimate
