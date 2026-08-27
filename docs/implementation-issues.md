@@ -376,3 +376,32 @@ contains no patient identity, DICOM pixels, credentials, or clinical conclusions
 - Deterministic fuzz tests exercise prose wrappers, fences, truncation, braces and escapes in strings,
   duplicate keys, non-finite numbers, multiple candidates, and ambiguity. The hardened local suite
   currently contains 123 passing tests.
+
+## Feedback loop and verification integrity
+
+- The runtime contract tests asserted on the text of `app.py`, for example
+  `assert source.count('"decoder": _decoder_metadata') == 3`. Counting occurrences of a source
+  string proves that a literal was typed, not that the response satisfies the runner. Every
+  pre-lock provenance failure was therefore only observable on a paid GPU, after the model had
+  already produced a medical result. `tests/test_runtime_response_contract.py` now derives the
+  required key set from `execute_window` itself and compares it against the keys the runtime
+  returns, so an omitted provenance field fails locally in milliseconds. The test was validated by
+  mutation: deleting the decoder field from the medical response makes it fail.
+- The occurrence-count assertion was also actively harmful, because adding a legitimate fourth
+  decoder response path broke an otherwise correct change. Structural checks replaced it.
+- The synthetic capacity probes at 1, 8, 16, and 32 images and the 32-DICOM probe did not report
+  decoder provenance, and `run_required_probes` did not require it. Only the constrained JSON probe
+  checked the field. Because these probes are what authorize medical access, medical generation
+  could have run under a decoder that no gate had proven. Both the runtime payload and probe
+  validation now carry and require decoder identity.
+- Provider absence verification listed only servers and security groups. A GPU instance root volume
+  is an SBS volume that survives server deletion, and a reserved public IP continues to bill, so a
+  cleanup could report `verified_absent` while billable resources remained. Absence is now proven
+  for volumes across both the instance and Block APIs, for public IPs, and for temporary SSH keys.
+- The destroy plan recorded `volume_ids: ["0"]`. That is the instance volume map slot key, not a
+  volume identifier, so it could never prove absence. Real SBS identifiers are now resolved from the
+  provider by server reference before deletion, without modifying the approved plan.
+- The repository had no version control, so eleven consecutive pre-lock failures could not be
+  bisected or compared. Git was initialized. `.gitignore` did not exclude the source DICOM media,
+  because DICOM instances are stored without a file extension; directory-level exclusions were added
+  before the first commit and the staged-file policy check was run.
