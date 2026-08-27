@@ -434,6 +434,7 @@ def _run_synthetic_images(images: list[Image.Image], source_type: str) -> dict:
         "model_revision": MODEL_REVISION,
         "model_snapshot_manifest_sha256": MODEL_SNAPSHOT_MANIFEST_SHA256,
         "runtime_digest": RUNTIME_DIGEST,
+        "decoder": _decoder_metadata,
         "approved_plan_sha256": APPROVED_PLAN_SHA256,
         "provision_plan_sha256": PROVISION_PLAN_SHA256,
         "cuda_available": torch.cuda.is_available(),

@@ -24,6 +24,7 @@ class FakeProbeClient:
             "model": "google/medgemma-1.5-4b-it",
             "model_revision": "revision",
             "runtime_digest": "sha256:runtime",
+            "decoder": decoder_contract(load_knee_meniscus_schema()),
             "model_snapshot_manifest_sha256": "snapshot",
             "approved_plan_sha256": "run-plan",
             "provision_plan_sha256": "provision-plan",
@@ -49,6 +50,7 @@ class FakeProbeClient:
             "model": "google/medgemma-1.5-4b-it",
             "model_revision": "revision",
             "runtime_digest": "sha256:runtime",
+            "decoder": decoder_contract(load_knee_meniscus_schema()),
             "model_snapshot_manifest_sha256": "snapshot",
             "approved_plan_sha256": "run-plan",
             "provision_plan_sha256": "provision-plan",
@@ -169,3 +171,56 @@ def test_probe_rejects_failed_constrained_json_decoder(tmp_path: Path) -> None:
             expected_run_plan_sha256="run-plan",
             expected_provision_plan_sha256="provision-plan",
         )
+
+
+def test_image_probe_without_decoder_provenance_blocks_medical_access(
+    tmp_path: Path,
+) -> None:
+    """A capacity probe must prove the decoder that medical generation will use."""
+    client = FakeProbeClient()
+    original = client.synthetic_probe
+
+    def missing_decoder(image_count: int):
+        result = original(image_count)
+        result.pop("decoder", None)
+        return result
+
+    client.synthetic_probe = missing_decoder
+    with pytest.raises(MRIStudyError, match="decoder provenance"):
+        run_required_probes(
+            client,
+            tmp_path / "probes.json",
+            expected_model="google/medgemma-1.5-4b-it",
+            expected_revision="revision",
+            expected_runtime_digest="sha256:runtime",
+            expected_snapshot_manifest_sha256="snapshot",
+            expected_run_plan_sha256="run-plan",
+            expected_provision_plan_sha256="provision-plan",
+        )
+    assert not (tmp_path / "probes.json").exists()
+
+
+def test_dicom_probe_without_decoder_provenance_blocks_medical_access(
+    tmp_path: Path,
+) -> None:
+    client = FakeProbeClient()
+    original = client.synthetic_dicom_probe
+
+    def missing_decoder():
+        result = original()
+        result.pop("decoder", None)
+        return result
+
+    client.synthetic_dicom_probe = missing_decoder
+    with pytest.raises(MRIStudyError, match="32-DICOM"):
+        run_required_probes(
+            client,
+            tmp_path / "probes.json",
+            expected_model="google/medgemma-1.5-4b-it",
+            expected_revision="revision",
+            expected_runtime_digest="sha256:runtime",
+            expected_snapshot_manifest_sha256="snapshot",
+            expected_run_plan_sha256="run-plan",
+            expected_provision_plan_sha256="provision-plan",
+        )
+    assert not (tmp_path / "probes.json").exists()

@@ -37,7 +37,11 @@ def test_runtime_pins_schema_and_supports_offline_model_snapshot() -> None:
     assert "_require_probe_authorization" in source
     assert '"run_plan_sha256": APPROVED_PLAN_SHA256' in source
     assert '"runtime_digest": RUNTIME_DIGEST' in source
-    assert source.count('"decoder": _decoder_metadata') == 3
+    # Decoder provenance is asserted structurally in
+    # tests/test_runtime_response_contract.py. Counting occurrences of a source
+    # string cannot distinguish a returned response field from an unrelated
+    # mention, and it breaks whenever a legitimate new response path is added.
+    assert '"decoder": _decoder_metadata' in source
 
 
 def test_runtime_orders_dicom_by_geometry_and_maps_evidence_ids() -> None:

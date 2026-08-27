@@ -51,6 +51,10 @@ def run_required_probes(
         }
         if any(result.get(key) != value for key, value in expected_provenance.items()):
             raise MRIStudyError(f"Synthetic {count}-image probe used stale provenance.")
+        if result.get("decoder") is None:
+            raise MRIStudyError(
+                f"Synthetic {count}-image probe did not report decoder provenance."
+            )
     dicom_probe = client.synthetic_dicom_probe()
     expected_dicom_ids = [f"image-{index:06d}" for index in range(1, 33)]
     if (
@@ -69,6 +73,7 @@ def run_required_probes(
         != expected_snapshot_manifest_sha256
         or dicom_probe.get("approved_plan_sha256") != expected_run_plan_sha256
         or dicom_probe.get("provision_plan_sha256") != expected_provision_plan_sha256
+        or dicom_probe.get("decoder") is None
     ):
         raise MRIStudyError("Synthetic 32-DICOM probe failed.")
     json_probe = client.synthetic_json_probe()
