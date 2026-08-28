@@ -38,9 +38,11 @@ def test_replay_indexes_only_hashes_and_classifications(tmp_path: Path) -> None:
         "historical_attempts": 1,
         "recoverable_attempts": 1,
         "unrecoverable_attempts": 0,
+        "truncated_attempts": 0,
         "ambiguous_attempts": 0,
         "unrecoverable_have_no_json_candidates": True,
         "all_json_candidates_recoverable": True,
+        "truncated_outputs_require_structural_correction": True,
     }
 
 
@@ -52,6 +54,27 @@ def test_replay_acceptance_rejects_ambiguity() -> None:
             "records": [],
         }
     )["passed"]
+
+
+def test_replay_acceptance_classifies_truncation_as_correctable() -> None:
+    acceptance = replay_acceptance(
+        {
+            "attempts": 2,
+            "classifications": {"exact_valid": 1, "truncated_json": 1},
+            "records": [
+                {
+                    "attempts": [
+                        {"status": "exact_valid", "candidate_count": 1},
+                        {"status": "truncated_json", "candidate_count": 0},
+                    ]
+                }
+            ],
+        }
+    )
+    assert acceptance["passed"]
+    assert acceptance["truncated_attempts"] == 1
+    assert acceptance["all_json_candidates_recoverable"]
+    assert acceptance["truncated_outputs_require_structural_correction"]
 
 
 def test_replay_digest_ignores_timestamp_but_binds_records() -> None:

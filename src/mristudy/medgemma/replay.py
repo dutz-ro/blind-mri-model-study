@@ -118,12 +118,14 @@ def replay_acceptance(report: dict[str, Any]) -> dict[str, Any]:
         classifications.get("normalizable_valid", 0)
     )
     unrecoverable = int(classifications.get("unrecoverable", 0))
+    truncated = int(classifications.get("truncated_json", 0))
     ambiguous = int(classifications.get("ambiguous_multiple_valid_results", 0))
     return {
         "passed": ambiguous == 0 and recoverable > 0,
         "historical_attempts": int(report.get("attempts", 0)),
         "recoverable_attempts": recoverable,
         "unrecoverable_attempts": unrecoverable,
+        "truncated_attempts": truncated,
         "ambiguous_attempts": ambiguous,
         "unrecoverable_have_no_json_candidates": all(
             attempt["candidate_count"] == 0
@@ -132,9 +134,19 @@ def replay_acceptance(report: dict[str, Any]) -> dict[str, Any]:
             if attempt["status"] == "unrecoverable"
         ),
         "all_json_candidates_recoverable": all(
-            attempt["status"] in {"exact_valid", "normalizable_valid", "unrecoverable"}
-            and (attempt["status"] != "unrecoverable" or attempt["candidate_count"] == 0)
+            attempt["status"]
+            in {"exact_valid", "normalizable_valid", "truncated_json", "unrecoverable"}
+            and (
+                attempt["status"] not in {"truncated_json", "unrecoverable"}
+                or attempt["candidate_count"] == 0
+            )
             for record in report.get("records", [])
             for attempt in record.get("attempts", [])
+        ),
+        "truncated_outputs_require_structural_correction": all(
+            attempt["candidate_count"] == 0
+            for record in report.get("records", [])
+            for attempt in record.get("attempts", [])
+            if attempt["status"] == "truncated_json"
         ),
     }
