@@ -26,11 +26,12 @@ def test_request_requires_exact_approved_uid_order() -> None:
     assert "instance UIDs differ from approved order" in validate_window_request(changed, approved)
 
 
-def test_result_rejects_invented_evidence() -> None:
+def test_result_scope_is_not_a_canonical_validation_error() -> None:
     result = valid_result()
     result["findings"][0]["traceable_evidence"][0]["export_id"] = "image-999999"
     errors = validate_window_result(result, ["image-000001", "image-000002"])
-    assert any("outside approved window" in error for error in errors)
+    assert not any("outside approved window" in error for error in errors)
+    assert errors == []
 
 
 def test_result_rejects_duplicate_evidence_reference() -> None:

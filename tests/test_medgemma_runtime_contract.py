@@ -46,6 +46,11 @@ def test_runtime_pins_schema_and_supports_offline_model_snapshot() -> None:
     # mention, and it breaks whenever a legitimate new response path is added.
     assert '"decoder": _decoder_identity()' in source
     assert "def _decoder_identity()" in source
+    assert "schema_errors = structural_correction_errors(decision)" in source
+    assert 'maximum_corrections = int(approved["maximum_structural_corrections"])' in source
+    assert "for attempt in range(1 + maximum_corrections)" in source
+    assert "if attempt < maximum_corrections" in source
+    assert "for attempt in range(3)" not in source
 
 
 def test_runtime_orders_dicom_by_geometry_and_maps_evidence_ids() -> None:

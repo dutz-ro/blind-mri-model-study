@@ -36,7 +36,11 @@ from .models.selection import select_generalist_exports
 from .paths import StudyPaths, study_paths
 from .prompts import knee_meniscus_prompt_v2
 from .provenance import append_event
-from .report_bundle import build_viewer_bundle, load_locked_model_results
+from .report_bundle import (
+    build_viewer_bundle,
+    evidence_summary_from_multiplanar_provenance,
+    load_locked_model_results,
+)
 from .reports import render_json_report
 from .state import NEXT_ACTION, Stage, StudyState
 from .utils import atomic_json, canonical_json, load_json, sha256_bytes
@@ -818,6 +822,20 @@ def viewer_bundle(
     if not model_results:
         raise MRIStudyError("No locked structured model result was found.")
     plan_path = paths.state / "medgemma-run-plan.json"
+    evidence_summaries = {}
+    medgemma_lock = paths.manifests / "medgemma-results-lock.json"
+    if medgemma_lock.exists():
+        lock = load_json(medgemma_lock)
+        run_id = lock.get("run")
+        provenance_pointer = lock.get("multiplanar_provenance")
+        if run_id and isinstance(provenance_pointer, str):
+            provenance_path = paths.runs / run_id / provenance_pointer
+            if provenance_path.exists():
+                evidence_summaries["medgemma-dicom"] = (
+                    evidence_summary_from_multiplanar_provenance(
+                        load_json(provenance_path)
+                    )
+                )
     bundle = build_viewer_bundle(
         model_results,
         load_json(manifest_path),
@@ -825,6 +843,7 @@ def viewer_bundle(
         paths.reports / "viewer",
         run_plan=load_json(plan_path) if plan_path.exists() else None,
         export_images=not skip_images,
+        evidence_summaries=evidence_summaries,
     )
     atomic_json(paths.reports / "viewer" / "report-bundle.json", bundle)
     typer.echo(

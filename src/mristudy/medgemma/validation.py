@@ -81,11 +81,19 @@ def evidence_traceability_warnings(
     return warnings
 
 
-def validate_window_result(result: dict[str, Any], allowed_evidence_ids: list[str]) -> list[str]:
+def validate_window_result(
+    result: dict[str, Any],
+    allowed_evidence_ids: list[str] | None = None,
+) -> list[str]:
+    """Validate clinical structure and invariants, independently of scope.
+
+    The optional evidence list is retained for compatibility and warning
+    generation elsewhere. A canonically valid clinical result must not trigger
+    another model generation merely because a citation is from another window.
+    """
     errors = [item["message"] for item in validate_knee_meniscus_result(result)]
     if not isinstance(result, dict):
         return errors + ["result must be an object"]
-    allowed = set(allowed_evidence_ids)
     for finding in result.get("findings") or []:
         if not isinstance(finding, dict):
             errors.append("finding must be an object")
@@ -106,8 +114,6 @@ def validate_window_result(result: dict[str, Any], allowed_evidence_ids: list[st
                     errors.append(f"{key} entry must be an object")
                     continue
                 reference = evidence.get("export_id")
-                if reference not in allowed:
-                    errors.append(f"evidence ID outside approved window: {reference}")
                 expected_role = "supporting" if key == "traceable_evidence" else "counter"
                 if evidence.get("role") != expected_role:
                     errors.append(

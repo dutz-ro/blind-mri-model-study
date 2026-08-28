@@ -13,6 +13,7 @@ from mristudy.medgemma.output_contract import (
     enumerate_json_candidates,
     normalize_structural_result,
     strict_json_loads,
+    structural_correction_errors,
     verify_normalization,
 )
 from tests.test_clinical_schema import valid_result
@@ -82,6 +83,45 @@ def test_identical_valid_results_are_not_ambiguous() -> None:
         ["image-000123"],
     )
     assert decision.status == "exact_valid"
+
+
+def test_out_of_window_evidence_is_canonically_valid() -> None:
+    """Evidence scope is graded later and must not trigger a model correction."""
+    result = valid_result()
+    result["findings"][0]["traceable_evidence"][0]["export_id"] = "image-000070"
+    decision = classify_output(
+        serialized(result),
+        load_knee_meniscus_schema(),
+        ["image-000071"],
+    )
+    assert decision.status == "exact_valid"
+    assert decision.result == result
+    assert decision.validation_policy == "medgemma-output-validation-v2"
+    assert structural_correction_errors(decision) == []
+
+
+def test_unknown_well_formed_evidence_is_canonically_valid() -> None:
+    result = valid_result()
+    result["findings"][0]["traceable_evidence"][0]["export_id"] = "image-999999"
+    decision = classify_output(
+        serialized(result),
+        load_knee_meniscus_schema(),
+        ["image-000123"],
+    )
+    assert decision.status == "exact_valid"
+
+
+def test_malformed_explicit_evidence_remains_canonically_invalid() -> None:
+    result = valid_result()
+    result["findings"][0]["traceable_evidence"][0]["export_id"] = "image-070"
+    decision = classify_output(
+        serialized(result),
+        load_knee_meniscus_schema(),
+        ["image-000123"],
+    )
+    assert decision.status == "unrecoverable"
+    assert decision.result is None
+    assert structural_correction_errors(decision)
 
 
 def test_normalization_is_idempotent_audited_and_does_not_mutate_source() -> None:

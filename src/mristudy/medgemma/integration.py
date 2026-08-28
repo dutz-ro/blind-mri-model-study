@@ -133,7 +133,14 @@ def _connected_components(
             same_anatomy = _anatomy_key(left["finding"], policy) == _anatomy_key(
                 right["finding"], policy
             )
-            shared = bool(set(left["evidence_ids"]) & set(right["evidence_ids"]))
+            # Only evidence actually supplied to each source window can prove
+            # that two window observations share the same visual support.
+            # Known global citations remain visible but cannot manufacture a
+            # cross-window link when the model never saw them in that call.
+            shared = bool(
+                set(left["link_eligible_evidence_ids"])
+                & set(right["link_eligible_evidence_ids"])
+            )
             if left["window_id"] != right["window_id"] and same_anatomy and shared:
                 union(left_index, right_index)
 
@@ -157,13 +164,30 @@ def integrate_series(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     observations = []
     for window in sorted(window_results, key=lambda item: item["window_id"]):
+        trace_by_finding = {
+            str(item.get("finding_id")): item
+            for item in (window.get("evidence_summary") or {}).get("findings") or []
+        }
         for finding in window["result"]["findings"]:
+            trace = trace_by_finding.get(str(finding.get("finding_id")), {})
+            cited_ids = sorted(_evidence_ids(finding))
+            # Legacy/synthetic callers predate the trace sidecar. Their cited
+            # evidence is the only available linkage signal and preserves the
+            # established integration behaviour. Production v2 artifacts
+            # always provide the explicit eligibility list.
+            eligible_ids = (
+                trace.get("link_eligible_evidence_ids")
+                if trace
+                else cited_ids
+            )
             observations.append(
                 {
                     "source_finding_id": finding["finding_id"],
                     "window_id": window["window_id"],
                     "finding": finding,
-                    "evidence_ids": sorted(_evidence_ids(finding)),
+                    "evidence_ids": cited_ids,
+                    "link_eligible_evidence_ids": sorted(eligible_ids or []),
+                    "evidence_dispositions": list(trace.get("dispositions") or []),
                 }
             )
 
@@ -218,6 +242,18 @@ def integrate_series(
                             for evidence_id in member["evidence_ids"]
                         }
                     ),
+                    "link_eligible_evidence_ids": sorted(
+                        {
+                            evidence_id
+                            for member in members
+                            for evidence_id in member["link_eligible_evidence_ids"]
+                        }
+                    ),
+                    "evidence_dispositions": [
+                        disposition
+                        for member in members
+                        for disposition in member["evidence_dispositions"]
+                    ],
                     "single_window_only": len({member["window_id"] for member in members}) == 1,
                     "repeated_across_windows": len({member["window_id"] for member in members}) > 1,
                     "repeated_with_distinct_evidence": len(
@@ -282,9 +318,19 @@ def integrate_multiplanar(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
     for item in series_results:
+        provenance_by_finding = {
+            entry["integrated_finding_id"]: entry
+            for entry in (item.get("provenance") or {}).get("finding_provenance") or []
+        }
         for finding in item["result"]["findings"]:
             grouped[_anatomy_key(finding, policy)].append(
-                {"role": item["role"], "finding": finding}
+                {
+                    "role": item["role"],
+                    "finding": finding,
+                    "evidence_provenance": provenance_by_finding.get(
+                        finding["finding_id"], {}
+                    ),
+                }
             )
 
     final = _empty_for(schema_version, body_region)
@@ -356,6 +402,22 @@ def integrate_multiplanar(
                             for evidence_id in _evidence_ids(member["finding"])
                         }
                     ),
+                    "link_eligible_evidence_ids": sorted(
+                        {
+                            evidence_id
+                            for member in members
+                            for evidence_id in member["evidence_provenance"].get(
+                                "link_eligible_evidence_ids", []
+                            )
+                        }
+                    ),
+                    "evidence_dispositions": [
+                        disposition
+                        for member in members
+                        for disposition in member["evidence_provenance"].get(
+                            "evidence_dispositions", []
+                        )
+                    ],
                     "claim_key": list(_claim_key(members[0]["finding"], policy)),
                 }
             )

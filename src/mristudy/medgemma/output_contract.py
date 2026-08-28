@@ -9,8 +9,9 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-EXTRACTION_POLICY = "medgemma-json-extraction-v1"
+EXTRACTION_POLICY = "medgemma-json-extraction-v2"
 NORMALIZATION_POLICY = "medgemma-normalization-v2"
+OUTPUT_VALIDATION_POLICY = "medgemma-output-validation-v2"
 MAX_OUTPUT_CHARACTERS = 1_000_000
 MAX_JSON_DEPTH = 128
 DECODER_POLICY = "medgemma-lmfe-decoder-v1"
@@ -62,6 +63,7 @@ class CandidateDecision:
 class ExtractionDecision:
     extraction_policy: str
     normalization_policy: str
+    validation_policy: str
     status: str
     candidate_count: int
     selected_candidate_index: int | None
@@ -94,6 +96,34 @@ def decoder_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 def policy_digest(policy: str, payload: Any) -> str:
     return _digest({"policy": policy, "payload": payload})
+
+
+def output_contract() -> dict[str, Any]:
+    payload = {
+        "extraction": EXTRACTION_POLICY,
+        "normalization": NORMALIZATION_POLICY,
+        "validation": OUTPUT_VALIDATION_POLICY,
+    }
+    return {
+        **payload,
+        "policy_sha256": policy_digest(OUTPUT_VALIDATION_POLICY, payload),
+    }
+
+
+def structural_correction_errors(decision: ExtractionDecision) -> list[str]:
+    """Return correction reasons only for canonical output failures.
+
+    Evidence scope is deliberately absent here. A valid JSON object with a
+    well-formed citation from another window or an unknown global ID is accepted
+    on the first attempt and graded locally; it must never trigger another model
+    generation.
+    """
+    if decision.result is not None:
+        return []
+    errors = []
+    for candidate in decision.candidates:
+        errors.extend(str(item) for item in candidate.get("validation_errors") or [])
+    return list(dict.fromkeys(errors)) or [decision.status]
 
 
 def decoder_contract(schema: dict[str, Any]) -> dict[str, Any]:
@@ -396,8 +426,16 @@ def verify_normalization(
 def validate_result(
     result: dict[str, Any],
     schema: dict[str, Any],
-    allowed_evidence_ids: list[str],
+    allowed_evidence_ids: list[str] | None = None,
 ) -> list[str]:
+    """Validate canonical model output, independently of evidence scope.
+
+    ``allowed_evidence_ids`` is retained for API compatibility but deliberately
+    ignored. Whether a well-formed image ID belongs to this window, another
+    window, another series, or nowhere in the approved plan is a traceability
+    decision made locally against the evidence map. It is not a reason to ask
+    the model for another clinical interpretation.
+    """
     errors = [
         error.message
         for error in sorted(
@@ -405,18 +443,15 @@ def validate_result(
             key=lambda item: list(item.absolute_path),
         )
     ]
-    errors.extend(validate_result_evidence(result, allowed_evidence_ids))
+    errors.extend(validate_evidence_structure(result))
     return errors
 
 
-def validate_result_evidence(
-    result: dict[str, Any],
-    allowed_evidence_ids: list[str],
-) -> list[str]:
+def validate_evidence_structure(result: dict[str, Any]) -> list[str]:
+    """Validate evidence objects and clinical safety invariants, not scope."""
     if not isinstance(result, dict):
         return ["result must be an object"]
     errors = []
-    allowed = set(allowed_evidence_ids)
     findings = result.get("findings") or []
     if not isinstance(findings, list):
         return ["findings must be an array"]
@@ -440,8 +475,6 @@ def validate_result_evidence(
             errors.append("counter_evidence entry must be an object")
         supporting_ids = [item.get("export_id") for item in supporting_objects]
         counter_ids = [item.get("export_id") for item in counter_objects]
-        if any(item not in allowed for item in supporting_ids + counter_ids):
-            errors.append("evidence outside approved window")
         if len(supporting_ids) != len(set(supporting_ids)):
             errors.append("duplicate supporting evidence")
         if len(counter_ids) != len(set(counter_ids)):
@@ -469,10 +502,23 @@ def validate_result_evidence(
     return errors
 
 
+def validate_result_evidence(
+    result: dict[str, Any],
+    allowed_evidence_ids: list[str] | None = None,
+) -> list[str]:
+    """Backward-compatible name for evidence structure validation.
+
+    Scope validation was intentionally removed in output-validation-v2. The
+    optional second argument is ignored so runtime and older callers cannot
+    accidentally reintroduce the correction loop.
+    """
+    return validate_evidence_structure(result)
+
+
 def classify_output(
     text: str,
     schema: dict[str, Any],
-    allowed_evidence_ids: list[str],
+    allowed_evidence_ids: list[str] | None = None,
 ) -> ExtractionDecision:
     candidates = enumerate_json_candidates(text)
     decisions = []
@@ -481,7 +527,7 @@ def classify_output(
         candidate_digest = _digest(candidate.text)
         try:
             parsed = strict_json_loads(candidate.text)
-            exact_errors = validate_result(parsed, schema, allowed_evidence_ids)
+            exact_errors = validate_result(parsed, schema)
             if not exact_errors:
                 normalized = parsed
                 actions = []
@@ -490,9 +536,7 @@ def classify_output(
             else:
                 normalized, actions = normalize_structural_result(parsed)
                 preservation_errors = verify_normalization(parsed, normalized, actions)
-                errors = preservation_errors + validate_result(
-                    normalized, schema, allowed_evidence_ids
-                )
+                errors = preservation_errors + validate_result(normalized, schema)
                 status = "normalizable_valid" if not errors else "schema_invalid"
             semantic_digest = (
                 _digest(normalized)
@@ -531,6 +575,7 @@ def classify_output(
     return ExtractionDecision(
         EXTRACTION_POLICY,
         NORMALIZATION_POLICY,
+        OUTPUT_VALIDATION_POLICY,
         status,
         len(candidates),
         selected[0] if selected else None,

@@ -6,7 +6,8 @@ from ..clinical_schema import load_knee_meniscus_schema
 from ..errors import MRIStudyError
 from ..utils import canonical_json, sha256_bytes
 from .evidence import ROLE_ORDER
-from .output_contract import decoder_contract
+from .evidence_trace import EVIDENCE_TRACE_POLICY
+from .output_contract import decoder_contract, output_contract, policy_digest
 
 
 def recompute_plan_sha256(plan: dict[str, Any]) -> str:
@@ -104,6 +105,23 @@ def require_complete_plan(plan: dict[str, Any]) -> None:
     expected_decoder = decoder_contract(load_knee_meniscus_schema())
     if plan.get("decoder") != expected_decoder:
         raise MRIStudyError("MedGemma decoder contract differs from approved contract.")
+    if plan.get("schema_version", 0) >= 3:
+        if plan.get("output_contract") != output_contract():
+            raise MRIStudyError("MedGemma output contract differs from approved contract.")
+        trace = plan.get("evidence_trace_contract") or {}
+        if trace.get("policy") != EVIDENCE_TRACE_POLICY:
+            raise MRIStudyError("MedGemma evidence trace contract differs from approved contract.")
+        expected_trace_digest = policy_digest(
+            EVIDENCE_TRACE_POLICY,
+            {
+                "policy": EVIDENCE_TRACE_POLICY,
+                "known_global_evidence_retained": True,
+                "unknown_evidence_quarantined": True,
+                "linkage_requires_current_window": True,
+            },
+        )
+        if trace.get("policy_sha256") != expected_trace_digest:
+            raise MRIStudyError("MedGemma evidence trace policy digest is invalid.")
     for window in plan.get("windows") or []:
         if window.get("max_new_tokens") != 4096:
             raise MRIStudyError("MedGemma window generation limit differs from approved contract.")
@@ -118,6 +136,10 @@ def require_complete_plan(plan: dict[str, Any]) -> None:
             raise MRIStudyError("MedGemma generation policy differs from approved contract.")
         if window.get("decoder") != expected_decoder:
             raise MRIStudyError("MedGemma window decoder differs from approved contract.")
+        if plan.get("schema_version", 0) >= 3 and window.get(
+            "output_contract"
+        ) != output_contract():
+            raise MRIStudyError("MedGemma window output contract differs from approved contract.")
         windows_by_role.setdefault(window["role"], []).append(window)
     if plan.get("operation") == "medgemma-full-coverage-window-analysis":
         if set(windows_by_role) != set(ROLE_ORDER):

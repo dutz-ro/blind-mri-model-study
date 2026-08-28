@@ -24,6 +24,7 @@ def run_required_probes(
     expected_snapshot_manifest_sha256: str,
     expected_run_plan_sha256: str,
     expected_provision_plan_sha256: str,
+    expected_output_contract: dict[str, Any],
 ) -> dict[str, Any]:
     image_probes = []
     for count in (1, 8, 16, 32):
@@ -55,6 +56,10 @@ def run_required_probes(
             raise MRIStudyError(
                 f"Synthetic {count}-image probe did not report decoder provenance."
             )
+        if result.get("output_contract") != expected_output_contract:
+            raise MRIStudyError(
+                f"Synthetic {count}-image probe used an unapproved output contract."
+            )
     dicom_probe = client.synthetic_dicom_probe()
     expected_dicom_ids = [f"image-{index:06d}" for index in range(1, 33)]
     if (
@@ -74,6 +79,7 @@ def run_required_probes(
         or dicom_probe.get("approved_plan_sha256") != expected_run_plan_sha256
         or dicom_probe.get("provision_plan_sha256") != expected_provision_plan_sha256
         or dicom_probe.get("decoder") is None
+        or dicom_probe.get("output_contract") != expected_output_contract
     ):
         raise MRIStudyError("Synthetic 32-DICOM probe failed.")
     json_probe = client.synthetic_json_probe()
@@ -90,6 +96,7 @@ def run_required_probes(
         != expected_snapshot_manifest_sha256
         or json_probe.get("approved_plan_sha256") != expected_run_plan_sha256
         or json_probe.get("provision_plan_sha256") != expected_provision_plan_sha256
+        or json_probe.get("output_contract") != expected_output_contract
     ):
         raise MRIStudyError("Synthetic constrained JSON probe failed.")
     report = {

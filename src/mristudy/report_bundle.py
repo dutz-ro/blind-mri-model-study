@@ -42,6 +42,57 @@ STATUS_LABELS = {
 }
 
 
+def evidence_summary_from_multiplanar_provenance(
+    provenance: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive per-output finding grades from integrated evidence provenance."""
+    findings = []
+    counts = {
+        STATUS_VERIFIED: 0,
+        STATUS_RECOVERED: 0,
+        STATUS_CROSS_WINDOW: 0,
+        STATUS_UNVERIFIED: 0,
+    }
+    for group in provenance.get("groups") or []:
+        for output in group.get("output_finding_provenance") or []:
+            dispositions = output.get("evidence_dispositions") or []
+            scopes = {item.get("scope_status") for item in dispositions}
+            recovered = any(
+                item.get("source_status") == "recovered_from_finding_id"
+                for item in dispositions
+            )
+            if not dispositions or "unknown" in scopes:
+                status = STATUS_UNVERIFIED
+            elif scopes == {"current_window"}:
+                status = STATUS_RECOVERED if recovered else STATUS_VERIFIED
+            else:
+                status = STATUS_CROSS_WINDOW
+            counts[status] += 1
+            findings.append(
+                {
+                    "finding_id": output.get("output_finding_id"),
+                    "evidence_status": status,
+                    "dispositions": dispositions,
+                    "link_eligible_evidence_ids": output.get(
+                        "link_eligible_evidence_ids"
+                    )
+                    or [],
+                }
+            )
+    total = len(findings)
+    traceable = total - counts[STATUS_UNVERIFIED]
+    return {
+        "policy": "integrated-evidence-provenance-v1",
+        "total_findings": total,
+        "counts": counts,
+        "traceable_findings": traceable,
+        "evidence_coverage_percent": round(100.0 * traceable / total, 2)
+        if total
+        else 100.0,
+        "findings": findings,
+    }
+
+
 def _derive_status(finding: dict[str, Any]) -> str:
     """Fall back to presence of citations when no grade was supplied.
 

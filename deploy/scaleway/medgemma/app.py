@@ -29,6 +29,8 @@ from output_contract import (
     classify_output,
     decoder_contract,
     decoder_schema,
+    output_contract,
+    structural_correction_errors,
 )
 from PIL import Image
 from pydantic import BaseModel
@@ -128,6 +130,7 @@ class AnalyzeWindowRequest(BaseModel):
     max_new_tokens: int = 4096
     generation: dict[str, object]
     decoder: dict[str, object]
+    output_contract: dict[str, object]
 
 
 class SyntheticProbeRequest(BaseModel):
@@ -163,6 +166,7 @@ def health() -> dict:
         "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "model_loaded": _pipeline is not None,
         "decoder": _health_decoder_identity(),
+        "output_contract": output_contract(),
     }
 
 
@@ -482,6 +486,7 @@ def _run_synthetic_images(images: list[Image.Image], source_type: str) -> dict:
         "model_snapshot_manifest_sha256": MODEL_SNAPSHOT_MANIFEST_SHA256,
         "runtime_digest": RUNTIME_DIGEST,
         "decoder": _decoder_identity(),
+        "output_contract": output_contract(),
         "approved_plan_sha256": APPROVED_PLAN_SHA256,
         "provision_plan_sha256": PROVISION_PLAN_SHA256,
         "cuda_available": torch.cuda.is_available(),
@@ -603,6 +608,7 @@ def synthetic_json_probe(request: SyntheticJsonProbeRequest) -> dict:
         "starts_with_json_object": raw_text.lstrip().startswith("{"),
         "selected_semantic_sha256": decision.selected_semantic_sha256,
         "decoder": _decoder_identity(),
+        "output_contract": output_contract(),
         "model": MODEL_ID,
         "model_revision": MODEL_REVISION,
         "model_snapshot_manifest_sha256": MODEL_SNAPSHOT_MANIFEST_SHA256,
@@ -636,7 +642,8 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
         schema_errors: list[str] = []
         with open(RESULT_SCHEMA_PATH, encoding="utf-8") as handle:
             result_schema = json.load(handle)
-        for attempt in range(3):
+        maximum_corrections = int(approved["maximum_structural_corrections"])
+        for attempt in range(1 + maximum_corrections):
             if attempt == 0:
                 prompt_parts = prompt.rsplit("Return JSON now.", maxsplit=1)
                 content = [{"type": "text", "text": prompt_parts[0]}]
@@ -663,7 +670,7 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
             raw_text = _generated_text(output)
             decision = classify_output(raw_text, result_schema, request.evidence_ids)
             parsed = decision.result
-            schema_errors = [] if parsed is not None else [decision.status]
+            schema_errors = structural_correction_errors(decision)
             selected_candidate = (
                 decision.candidates[decision.selected_candidate_index]
                 if decision.selected_candidate_index is not None
@@ -683,6 +690,7 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
                     "output_contract": {
                         "extraction_policy": decision.extraction_policy,
                         "normalization_policy": decision.normalization_policy,
+                        "validation_policy": decision.validation_policy,
                         "status": decision.status,
                         "candidate_count": decision.candidate_count,
                         "selected_candidate_index": decision.selected_candidate_index,
@@ -694,7 +702,7 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
             )
             if not schema_errors:
                 break
-            if attempt < 2:
+            if attempt < maximum_corrections:
                 prompt = _correction_prompt(request.prompt, attempt + 1, schema_errors, raw_text)
     except HTTPException:
         raise
@@ -715,6 +723,7 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
         "prompt_sha256": request.prompt_sha256,
         "generation": request.generation,
         "decoder": _decoder_identity(),
+        "output_contract": request.output_contract,
         "raw_text": attempts[-1]["raw_text"],
         "result": parsed,
         "schema_status": "valid" if not schema_errors else "invalid",

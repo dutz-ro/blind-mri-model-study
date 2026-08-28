@@ -46,6 +46,7 @@ def validate_window_payload(payload: dict[str, Any], approved: dict[str, Any]) -
         "max_new_tokens",
         "generation",
         "decoder",
+        "output_contract",
     ):
         if payload.get(key) != approved.get(key):
             errors.append(f"{key} differs from approved window")

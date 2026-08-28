@@ -14,8 +14,9 @@ from ..prompts import (
 from ..schema_registry import load_schema
 from ..utils import canonical_json, sha256_bytes, utc_now
 from .evidence import ROLE_ORDER, assign_global_evidence, finalize_evidence_map
+from .evidence_trace import EVIDENCE_TRACE_POLICY
 from .integrity import recompute_plan_sha256
-from .output_contract import decoder_contract
+from .output_contract import decoder_contract, output_contract, policy_digest
 from .windows import plan_windows
 
 
@@ -103,8 +104,9 @@ def build_medgemma_window_plan(
                     "no_repeat_ngram_size": 8,
                     "json_schema_enforced": True,
                 },
-                "decoder": decoder,
-                "model_repository": model_repository,
+                    "decoder": decoder,
+                    "output_contract": output_contract(),
+                    "model_repository": model_repository,
                 "model_revision": model_revision,
                 "runtime_digest": runtime_digest,
             }
@@ -162,7 +164,7 @@ def build_medgemma_window_plan(
             raise ValueError("Window plan contains a UID absent from Orthanc.")
 
     plan = {
-        "schema_version": 2,
+        "schema_version": 3,
         "operation": "medgemma-full-coverage-window-analysis",
         "created_at": utc_now(),
         "window_size": window_size,
@@ -190,6 +192,19 @@ def build_medgemma_window_plan(
         "body_region": profile.body_region if profile else "knee",
         "role_order": list(role_order),
         "decoder": decoder,
+        "output_contract": output_contract(),
+        "evidence_trace_contract": {
+            "policy": EVIDENCE_TRACE_POLICY,
+            "policy_sha256": policy_digest(
+                EVIDENCE_TRACE_POLICY,
+                {
+                    "policy": EVIDENCE_TRACE_POLICY,
+                    "known_global_evidence_retained": True,
+                    "unknown_evidence_quarantined": True,
+                    "linkage_requires_current_window": True,
+                },
+            ),
+        },
         "orthanc_manifest_sha256": orthanc_manifest["manifest_sha256"],
         "evidence_map_sha256": evidence_manifest["map_sha256"],
         "windows": windows,

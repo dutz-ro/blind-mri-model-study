@@ -74,5 +74,6 @@ class MedGemmaHttpClient:
                 "max_new_tokens": window["max_new_tokens"],
                 "generation": window["generation"],
                 "decoder": window["decoder"],
+                "output_contract": window.get("output_contract", {}),
             },
         )

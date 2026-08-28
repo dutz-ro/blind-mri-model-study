@@ -11,6 +11,11 @@ from __future__ import annotations
 from typing import Any
 
 from mristudy.medgemma.evidence_trace import (
+    SCOPE_ADJACENT_SAME_SERIES,
+    SCOPE_CURRENT_WINDOW,
+    SCOPE_DISTANT_SAME_SERIES,
+    SCOPE_OTHER_SERIES,
+    SCOPE_UNKNOWN,
     STATUS_CROSS_WINDOW,
     STATUS_RECOVERED,
     STATUS_UNVERIFIED,
@@ -20,6 +25,8 @@ from mristudy.medgemma.evidence_trace import (
     coverage_warning,
     grade_result_evidence,
     is_evidence_id,
+    project_result_evidence,
+    verify_evidence_projection,
 )
 
 
@@ -29,6 +36,47 @@ def status_by_index(summary):
 WINDOW = [f"image-{index:06d}" for index in range(212, 243)]
 NEIGHBOUR = [f"image-{index:06d}" for index in range(181, 212)]
 PLAN = set(WINDOW) | set(NEIGHBOUR)
+
+
+def _window() -> dict[str, Any]:
+    return {
+        "window_id": "primary-volume-window-0010",
+        "series_uid": "series-primary",
+        "start_index": 211,
+        "end_index": 241,
+        "evidence_ids": WINDOW,
+    }
+
+
+def _map() -> dict[str, dict[str, Any]]:
+    result = {
+        evidence_id: {
+            "evidence_id": evidence_id,
+            "series_uid": "series-primary",
+            "geometric_index": index - 1,
+            "window_ids": ["primary-volume-window-0010"],
+        }
+        for index, evidence_id in enumerate(WINDOW, start=212)
+    }
+    result["image-000211"] = {
+        "evidence_id": "image-000211",
+        "series_uid": "series-primary",
+        "geometric_index": 210,
+        "window_ids": ["primary-volume-window-0009"],
+    }
+    result["image-000200"] = {
+        "evidence_id": "image-000200",
+        "series_uid": "series-primary",
+        "geometric_index": 199,
+        "window_ids": ["primary-volume-window-0009"],
+    }
+    result["image-000500"] = {
+        "evidence_id": "image-000500",
+        "series_uid": "series-other",
+        "geometric_index": 10,
+        "window_ids": ["other-window"],
+    }
+    return result
 
 
 def _finding(finding_id: str, supporting: list[str] | None = None) -> dict[str, Any]:
@@ -187,3 +235,53 @@ def test_recovery_can_be_disabled_for_strict_reporting() -> None:
     assert status_by_index(summary)[0] == STATUS_UNVERIFIED
     assert not [item for item in actions if item["operation"] == "recovered_citation"]
     assert summary["counts"][STATUS_RECOVERED] == 0
+
+
+def test_projection_classifies_current_adjacent_distant_and_other_series() -> None:
+    result = _result(
+        [
+            _finding(
+                "finding-1",
+                ["image-000220", "image-000211", "image-000200", "image-000500"],
+            )
+        ]
+    )
+    safe, actions, summary = project_result_evidence(result, _window(), _map())
+    dispositions = summary["findings"][0]["dispositions"]
+    scopes = {item["export_id"]: item["scope_status"] for item in dispositions}
+    assert scopes == {
+        "image-000220": SCOPE_CURRENT_WINDOW,
+        "image-000211": SCOPE_ADJACENT_SAME_SERIES,
+        "image-000200": SCOPE_DISTANT_SAME_SERIES,
+        "image-000500": SCOPE_OTHER_SERIES,
+    }
+    assert summary["findings"][0]["link_eligible_evidence_ids"] == ["image-000220"]
+    assert safe == result
+    assert not verify_evidence_projection(result, safe, actions)
+
+
+def test_unknown_explicit_evidence_is_quarantined_but_finding_is_retained() -> None:
+    result = _result([_finding("finding-1", ["image-999999"])])
+    safe, actions, summary = project_result_evidence(result, _window(), _map())
+    assert result["findings"][0]["traceable_evidence"][0]["export_id"] == "image-999999"
+    assert safe["findings"][0]["traceable_evidence"] == []
+    assert safe["findings"][0]["finding_id"] == "finding-1"
+    assert summary["findings"][0]["evidence_status"] == STATUS_UNVERIFIED
+    assert summary["scope_counts"][SCOPE_UNKNOWN] == 1
+    assert any(action["operation"] == "quarantined_unknown_citation" for action in actions)
+    assert not verify_evidence_projection(result, safe, actions)
+
+
+def test_projection_never_uses_cross_window_evidence_for_linkage() -> None:
+    result = _result([_finding("finding-1", ["image-000211"])])
+    safe, _, summary = project_result_evidence(result, _window(), _map())
+    assert safe["findings"][0]["traceable_evidence"][0]["export_id"] == "image-000211"
+    assert summary["findings"][0]["link_eligible_evidence_ids"] == []
+    assert summary["findings"][0]["evidence_status"] == STATUS_CROSS_WINDOW
+
+
+def test_projection_verifier_rejects_clinical_mutation() -> None:
+    result = _result([_finding("finding-1", ["image-000220"])])
+    safe, actions, _ = project_result_evidence(result, _window(), _map())
+    safe["findings"][0]["finding_id"] = "changed"
+    assert verify_evidence_projection(result, safe, actions)

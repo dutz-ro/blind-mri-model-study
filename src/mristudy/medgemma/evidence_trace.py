@@ -28,7 +28,7 @@ import re
 from copy import deepcopy
 from typing import Any
 
-EVIDENCE_TRACE_POLICY = "evidence-traceability-v1"
+EVIDENCE_TRACE_POLICY = "evidence-traceability-v2"
 
 EVIDENCE_ID_PATTERN = re.compile(r"^image-[0-9]{6}$")
 
@@ -36,6 +36,12 @@ STATUS_VERIFIED = "verified"
 STATUS_RECOVERED = "recovered"
 STATUS_CROSS_WINDOW = "cross_window"
 STATUS_UNVERIFIED = "unverified"
+
+SCOPE_CURRENT_WINDOW = "current_window"
+SCOPE_ADJACENT_SAME_SERIES = "adjacent_same_series"
+SCOPE_DISTANT_SAME_SERIES = "distant_same_series"
+SCOPE_OTHER_SERIES = "other_series"
+SCOPE_UNKNOWN = "unknown"
 
 # Ordered from strongest to weakest. A finding is graded by its weakest usable
 # citation, so a single cross-window reference cannot present itself as verified.
@@ -106,6 +112,264 @@ def classify_evidence_id(
     if plan_evidence_ids is not None and export_id in plan_evidence_ids:
         return STATUS_CROSS_WINDOW
     return STATUS_UNVERIFIED
+
+
+def classify_evidence_scope(
+    export_id: str,
+    window: dict[str, Any],
+    evidence_map: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Resolve one citation and determine whether it was supplied to this call."""
+    entry = evidence_map.get(export_id)
+    if entry is None:
+        return {
+            "export_id": export_id,
+            "resolution_status": "unknown",
+            "scope_status": SCOPE_UNKNOWN,
+            "integration_link_eligible": False,
+            "retained_in_integration_result": False,
+        }
+    current = set(window.get("evidence_ids") or [])
+    if export_id in current:
+        scope = SCOPE_CURRENT_WINDOW
+        eligible = True
+    elif entry.get("series_uid") != window.get("series_uid"):
+        scope = SCOPE_OTHER_SERIES
+        eligible = False
+    else:
+        index = entry.get("geometric_index")
+        start = window.get("start_index")
+        end = window.get("end_index")
+        adjacent = (
+            isinstance(index, int)
+            and isinstance(start, int)
+            and isinstance(end, int)
+            and (index == start - 1 or index == end + 1)
+        )
+        scope = SCOPE_ADJACENT_SAME_SERIES if adjacent else SCOPE_DISTANT_SAME_SERIES
+        eligible = False
+    return {
+        "export_id": export_id,
+        "resolution_status": "resolved",
+        "scope_status": scope,
+        "integration_link_eligible": eligible,
+        "retained_in_integration_result": True,
+        "series_uid": entry.get("series_uid"),
+        "geometric_index": entry.get("geometric_index"),
+        "window_ids": list(entry.get("window_ids") or []),
+    }
+
+
+def project_result_evidence(
+    result: dict[str, Any],
+    window: dict[str, Any],
+    evidence_map: dict[str, dict[str, Any]],
+    *,
+    recover: bool = True,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    """Create an integration-safe result while preserving every clinical claim.
+
+    Known global evidence remains visible, but only evidence actually supplied
+    to the current invocation may link observations across windows. Unknown
+    evidence is quarantined from the safe result; the finding itself remains.
+    """
+    safe = deepcopy(result)
+    actions: list[dict[str, Any]] = []
+    findings = safe.get("findings")
+    if not isinstance(findings, list):
+        summary = _summary([], set(window.get("evidence_ids") or []))
+        summary["findings"] = []
+        return safe, actions, summary
+
+    current_ids = set(window.get("evidence_ids") or [])
+    plan_ids = set(evidence_map)
+    statuses: list[str] = []
+    grades: list[dict[str, Any]] = []
+    for index, finding in enumerate(findings):
+        if not isinstance(finding, dict):
+            continue
+        if recover:
+            recover_finding_evidence(finding, index, current_ids, plan_ids, actions)
+
+        dispositions: list[dict[str, Any]] = []
+        link_eligible: list[str] = []
+        all_resolved: list[str] = []
+        for key in ("traceable_evidence", "counter_evidence"):
+            entries = finding.get(key)
+            if not isinstance(entries, list):
+                continue
+            retained = []
+            for evidence_index, item in enumerate(entries):
+                if not isinstance(item, dict):
+                    retained.append(item)
+                    continue
+                export_id = item.get("export_id")
+                if not is_evidence_id(export_id):
+                    retained.append(item)
+                    continue
+                disposition = classify_evidence_scope(export_id, window, evidence_map)
+                disposition.update(
+                    {
+                        "field": key,
+                        "evidence_index": evidence_index,
+                        "source_status": (
+                            "recovered_from_finding_id"
+                            if any(
+                                action["rule_id"] == "evidence-recovered-from-finding-id-v1"
+                                and action["path"].startswith(f"findings.{index}.")
+                                and export_id in (action.get("new_value") or [])
+                                for action in actions
+                            )
+                            else "explicit"
+                        ),
+                    }
+                )
+                dispositions.append(disposition)
+                if disposition["retained_in_integration_result"]:
+                    retained.append(item)
+                    all_resolved.append(export_id)
+                else:
+                    _action(
+                        actions,
+                        "unknown-evidence-quarantined-v1",
+                        f"findings.{index}.{key}.{evidence_index}",
+                        "quarantined_unknown_citation",
+                        item,
+                        None,
+                        {"export_id": export_id},
+                    )
+                if disposition["integration_link_eligible"]:
+                    link_eligible.append(export_id)
+            finding[key] = retained
+
+        scopes = {item["scope_status"] for item in dispositions}
+        recovered = any(
+            item["source_status"] == "recovered_from_finding_id"
+            for item in dispositions
+        )
+        if not dispositions or SCOPE_UNKNOWN in scopes:
+            status = STATUS_UNVERIFIED
+        elif scopes == {SCOPE_CURRENT_WINDOW}:
+            status = STATUS_RECOVERED if recovered else STATUS_VERIFIED
+        else:
+            status = STATUS_CROSS_WINDOW
+        statuses.append(status)
+        grades.append(
+            {
+                "index": index,
+                "finding_id": finding.get("finding_id"),
+                "evidence_status": status,
+                "dispositions": dispositions,
+                "all_resolved_evidence_ids": sorted(set(all_resolved)),
+                "link_eligible_evidence_ids": sorted(set(link_eligible)),
+            }
+        )
+
+    summary = _summary(statuses, current_ids)
+    summary["findings"] = grades
+    summary["scope_counts"] = {
+        scope: sum(
+            item["scope_status"] == scope
+            for grade in grades
+            for item in grade["dispositions"]
+        )
+        for scope in (
+            SCOPE_CURRENT_WINDOW,
+            SCOPE_ADJACENT_SAME_SERIES,
+            SCOPE_DISTANT_SAME_SERIES,
+            SCOPE_OTHER_SERIES,
+            SCOPE_UNKNOWN,
+        )
+    }
+    return safe, actions, summary
+
+
+def verify_evidence_projection(
+    source: dict[str, Any],
+    safe: dict[str, Any],
+    actions: list[dict[str, Any]],
+) -> list[str]:
+    """Reject any unexplained clinical change in the evidence projection."""
+    errors: list[str] = []
+    allowed_actions = [
+        action
+        for action in actions
+        if action["operation"] in {"recovered_citation", "quarantined_unknown_citation"}
+    ]
+    source_copy = deepcopy(source)
+    safe_copy = deepcopy(safe)
+    for index, (before, after) in enumerate(
+        zip(source_copy.get("findings") or [], safe_copy.get("findings") or [], strict=False)
+    ):
+        if not isinstance(before, dict) or not isinstance(after, dict):
+            continue
+        for key in ("traceable_evidence", "counter_evidence"):
+            before.pop(key, None)
+            after.pop(key, None)
+        if before != after:
+            errors.append(f"Clinical fields changed during evidence projection: findings.{index}")
+    if len(source_copy.get("findings") or []) != len(safe_copy.get("findings") or []):
+        errors.append("Finding count changed during evidence projection.")
+    if not allowed_actions and source != safe:
+        errors.append("Evidence projection changed without an audited action.")
+    expected_quarantines = [
+        action
+        for action in allowed_actions
+        if action["operation"] == "quarantined_unknown_citation"
+    ]
+    expected_recoveries = [
+        action for action in allowed_actions if action["operation"] == "recovered_citation"
+    ]
+    source_count = sum(
+        len(finding.get(key) or [])
+        for finding in source.get("findings") or []
+        if isinstance(finding, dict)
+        for key in ("traceable_evidence", "counter_evidence")
+    )
+    safe_count = sum(
+        len(finding.get(key) or [])
+        for finding in safe.get("findings") or []
+        if isinstance(finding, dict)
+        for key in ("traceable_evidence", "counter_evidence")
+    )
+    if safe_count != source_count - len(expected_quarantines) + len(expected_recoveries):
+        errors.append("Evidence count change does not match the audited actions.")
+    expected = deepcopy(source)
+    # Quarantine indexes refer to the source arrays, so remove from highest to
+    # lowest index within each array to keep the paths stable.
+    for action in sorted(
+        expected_quarantines,
+        key=lambda item: tuple(
+            int(part) if part.isdigit() else part for part in item["path"].split(".")
+        ),
+        reverse=True,
+    ):
+        parts = action["path"].split(".")
+        finding_index = int(parts[1])
+        field = parts[2]
+        evidence_index = int(parts[3])
+        entries = expected["findings"][finding_index][field]
+        if evidence_index >= len(entries) or entries[evidence_index] != action["old_value"]:
+            errors.append(f"Quarantine action does not match its source path: {action['path']}")
+            continue
+        entries.pop(evidence_index)
+    for action in expected_recoveries:
+        parts = action["path"].split(".")
+        finding_index = int(parts[1])
+        export_ids = action.get("new_value") or []
+        for export_id in export_ids:
+            expected["findings"][finding_index].setdefault("traceable_evidence", []).append(
+                {
+                    "export_id": export_id,
+                    "role": "supporting",
+                    "description": (
+                        "Recovered from finding_id; the model placed the citation there."
+                    ),
+                }
+            )
+    if expected != safe:
+        errors.append("Integration-safe result differs from the audited evidence actions.")
+    return errors
 
 
 def recover_finding_evidence(

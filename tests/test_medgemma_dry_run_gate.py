@@ -70,6 +70,7 @@ class ConformantClient:
             "prompt_sha256": window["prompt_sha256"],
             "generation": window["generation"],
             "decoder": window["decoder"],
+            "output_contract": window.get("output_contract", {}),
             "raw_text": raw_text,
             "result": result,
             "schema_status": "valid",
@@ -130,7 +131,9 @@ def test_every_window_prompt_hash_matches_the_plan() -> None:
         assert window["prompt_sha256"] == sha256_bytes(expected.encode())
 
 
-@pytest.mark.parametrize("field", ["decoder", "generation", "runtime_digest"])
+@pytest.mark.parametrize(
+    "field", ["decoder", "generation", "output_contract", "runtime_digest"]
+)
 def test_missing_provenance_field_stops_the_run(tmp_path: Path, field: str) -> None:
     """Reproduce the defect class that invalidated several paid runtimes."""
     plan = single_window_plan()

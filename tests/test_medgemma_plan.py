@@ -99,6 +99,10 @@ def test_full_plan_has_617_unique_slices_and_26_windows(tmp_path: Path) -> None:
     assert plan["decoder"]["version"] == "0.11.3"
     assert plan["decoder"]["config"]["max_json_array_length"] == 128
     assert plan["historical_replay_sha256"] == "a" * 64
+    assert plan["schema_version"] == 3
+    assert plan["output_contract"]["validation"] == "medgemma-output-validation-v2"
+    assert plan["evidence_trace_contract"]["policy"] == "evidence-traceability-v2"
+    assert all(window["output_contract"] == plan["output_contract"] for window in plan["windows"])
 
 
 def test_geometry_fallback_is_explicit(tmp_path: Path) -> None:

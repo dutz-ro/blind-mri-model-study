@@ -2,12 +2,30 @@ from mristudy.medgemma.integration import integrate_multiplanar, integrate_serie
 from tests.test_clinical_schema import valid_result
 
 
-def window(window_id: str, status: str, evidence_id: str) -> dict:
+def window(
+    window_id: str,
+    status: str,
+    evidence_id: str,
+    *,
+    link_eligible: bool = True,
+) -> dict:
     result = valid_result()
     result["findings"][0]["finding_id"] = "finding-1"
     result["findings"][0]["tear_status"] = status
     result["findings"][0]["traceable_evidence"][0]["export_id"] = evidence_id
-    return {"window_id": window_id, "result": result}
+    return {
+        "window_id": window_id,
+        "result": result,
+        "evidence_summary": {
+            "findings": [
+                {
+                    "finding_id": "finding-1",
+                    "link_eligible_evidence_ids": [evidence_id] if link_eligible else [],
+                    "dispositions": [],
+                }
+            ]
+        },
+    }
 
 
 def test_overlap_duplicate_is_deduplicated_without_double_counting_evidence() -> None:
@@ -53,6 +71,19 @@ def test_same_anatomy_without_shared_evidence_stays_separate() -> None:
         [window("w1", "probable", "image-000010"), window("w2", "probable", "image-000020")],
     )
     assert len(integrated["findings"]) == 2
+
+
+def test_shared_but_unsupplied_evidence_does_not_merge_windows() -> None:
+    integrated, matrix = integrate_series(
+        "primary-volume",
+        "series-1",
+        [
+            window("w1", "probable", "image-000010", link_eligible=False),
+            window("w2", "probable", "image-000010", link_eligible=False),
+        ],
+    )
+    assert len(integrated["findings"]) == 2
+    assert all(not item["repeated_across_windows"] for item in matrix["finding_provenance"])
 
 
 def test_distinct_consecutive_evidence_can_support_single_plane() -> None:

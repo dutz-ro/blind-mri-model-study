@@ -84,13 +84,19 @@ def test_runtime_contract_rejects_changed_decoder_policy() -> None:
     assert "decoder differs from approved window" in errors
 
 
-def test_runtime_contract_rejects_invented_evidence_and_boundary_violation() -> None:
+def test_runtime_contract_separates_evidence_scope_from_boundary_violation() -> None:
     result = valid_result()
     result["findings"][0]["traceable_evidence"][0]["export_id"] = "image-999999"
     result["treatment_boundary"]["repairability_determined"] = True
     errors = CONTRACTS.validate_result_evidence(result, ["image-000001"])
-    assert "evidence outside approved window" in errors
+    assert "evidence outside approved window" not in errors
     assert "repairability determined" in errors
+
+
+def test_runtime_contract_accepts_well_formed_out_of_window_evidence() -> None:
+    result = valid_result()
+    result["findings"][0]["traceable_evidence"][0]["export_id"] = "image-999999"
+    assert CONTRACTS.validate_result_evidence(result, ["image-000001"]) == []
 
 
 def test_structural_normalization_is_conservative_and_audited() -> None:

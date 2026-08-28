@@ -76,7 +76,7 @@ def test_provenance_contract_is_discoverable_and_non_trivial() -> None:
     required = _required_provenance_keys()
     assert len(required) >= 10
     # Fields whose absence previously destroyed a paid GPU run.
-    assert {"decoder", "generation", "runtime_digest"} <= required
+    assert {"decoder", "generation", "output_contract", "runtime_digest"} <= required
 
 
 def test_medical_endpoint_returns_every_key_the_runner_requires() -> None:

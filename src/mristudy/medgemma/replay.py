@@ -7,17 +7,28 @@ from typing import Any
 from ..clinical_schema import load_knee_meniscus_schema
 from ..errors import MRIStudyError
 from ..utils import atomic_json, canonical_json, load_json, sha256_bytes, sha256_file, utc_now
+from .evidence_trace import project_result_evidence, verify_evidence_projection
 from .output_contract import (
     EXTRACTION_POLICY,
     NORMALIZATION_POLICY,
+    OUTPUT_VALIDATION_POLICY,
     classify_output,
     decoder_contract,
 )
 
 
-def replay_historical_runs(runs_root: Path, output_path: Path) -> dict[str, Any]:
+def replay_historical_runs(
+    runs_root: Path,
+    output_path: Path,
+    *,
+    plan: dict[str, Any] | None = None,
+    evidence_map: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     schema = load_knee_meniscus_schema()
     records = []
+    windows = {
+        item["window_id"]: item for item in (plan or {}).get("windows") or []
+    }
     for raw_path in sorted(runs_root.glob("medgemma-schema-v2-*/windows/*.raw.json")):
         response = load_json(raw_path)
         allowed = response.get("evidence_ids") or []
@@ -26,6 +37,19 @@ def replay_historical_runs(runs_root: Path, output_path: Path) -> dict[str, Any]
         attempt_records = []
         for attempt in response.get("attempts") or []:
             decision = classify_output(str(attempt.get("raw_text") or ""), schema, allowed)
+            trace_counts = {}
+            integration_safe_sha256 = None
+            projection_valid = None
+            window = windows.get(str(response.get("window_id") or ""))
+            if decision.result is not None and window is not None and evidence_map is not None:
+                safe, actions, summary = project_result_evidence(
+                    decision.result, window, evidence_map
+                )
+                trace_counts = summary.get("scope_counts") or {}
+                integration_safe_sha256 = sha256_bytes(canonical_json(safe))
+                projection_valid = not verify_evidence_projection(
+                    decision.result, safe, actions
+                )
             attempt_records.append(
                 {
                     "attempt": attempt.get("attempt"),
@@ -41,6 +65,9 @@ def replay_historical_runs(runs_root: Path, output_path: Path) -> dict[str, Any]
                             for action in candidate.get("actions", [])
                         }
                     ),
+                    "trace_disposition_counts": trace_counts,
+                    "integration_safe_result_sha256": integration_safe_sha256,
+                    "projection_valid": projection_valid,
                 }
             )
         records.append(
@@ -63,8 +90,10 @@ def replay_historical_runs(runs_root: Path, output_path: Path) -> dict[str, Any]
         "policies": {
             "extraction": EXTRACTION_POLICY,
             "normalization": NORMALIZATION_POLICY,
+            "validation": OUTPUT_VALIDATION_POLICY,
             "decoder": decoder_contract(schema),
         },
+        "traceability_evaluated": bool(plan is not None and evidence_map is not None),
         "records": records,
     }
     report["report_sha256"] = replay_report_digest(report)

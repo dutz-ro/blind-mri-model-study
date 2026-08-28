@@ -226,6 +226,7 @@ def register_backend_commands(
             ],
             expected_run_plan_sha256=plan["plan_sha256"],
             expected_provision_plan_sha256=provision["plan_sha256"],
+            expected_output_contract=plan["output_contract"],
         )
         primary = next(window for window in plan["windows"] if window["role"] == "primary-volume")
         dicomweb = client.probe_dicomweb(primary["study_uid"], primary["series_uid"])
@@ -342,7 +343,18 @@ def register_backend_commands(
     def medgemma_replay(study_id: Annotated[str, typer.Option("--study")]) -> None:
         paths, _ = context_loader(study_id)
         output = paths.manifests / "medgemma-historical-replay.json"
-        report = replay_historical_runs(paths.runs, output)
+        plan_path = paths.state / "medgemma-run-plan.json"
+        evidence_path = paths.manifests / "medgemma-evidence-map.json"
+        plan = load_json(plan_path) if plan_path.exists() else None
+        evidence_map = None
+        if plan is not None and evidence_path.exists():
+            evidence_map = require_valid_evidence_map(load_json(evidence_path), plan)
+        report = replay_historical_runs(
+            paths.runs,
+            output,
+            plan=plan,
+            evidence_map=evidence_map,
+        )
         acceptance = replay_acceptance(report)
         typer.echo(
             json.dumps(
@@ -425,7 +437,13 @@ def register_backend_commands(
             "series_integrations": final["series_integrations"],
             "multiplanar_result": final["multiplanar_result"],
             "multiplanar_provenance": final["multiplanar_provenance"],
+            "evidence_traceability": final["evidence_traceability"],
+            "evidence_traceability_artifact": final["evidence_traceability_artifact"],
         }
+        if final.get("evidence_traceability_warning"):
+            lock["evidence_traceability_warning"] = final[
+                "evidence_traceability_warning"
+            ]
         atomic_json(paths.manifests / "medgemma-results-lock.json", lock)
         state.advance(Stage.MEDGEMMA_COMPLETE)
         append_event(

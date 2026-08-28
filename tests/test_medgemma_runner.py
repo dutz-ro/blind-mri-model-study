@@ -6,8 +6,8 @@ import pytest
 from mristudy.clinical_schema import load_knee_meniscus_schema
 from mristudy.errors import MRIStudyError
 from mristudy.medgemma.integrity import recompute_plan_sha256
-from mristudy.medgemma.output_contract import decoder_contract
-from mristudy.medgemma.runner import run_window_plan
+from mristudy.medgemma.output_contract import decoder_contract, output_contract
+from mristudy.medgemma.runner import execute_window, run_window_plan
 from mristudy.prompts import medgemma_json_suffix_v2, medgemma_knee_meniscus_prompt_v2
 from mristudy.utils import canonical_json, sha256_bytes
 from tests.medgemma_helpers import result_for_evidence
@@ -67,6 +67,7 @@ class FakeClient:
             "prompt_sha256": window["prompt_sha256"],
             "generation": window["generation"],
             "decoder": window["decoder"],
+            "output_contract": window.get("output_contract", output_contract()),
             "runtime_digest": window["runtime_digest"],
             "run_plan_sha256": plan()["plan_sha256"],
             "provision_plan_sha256": "provision-plan",
@@ -125,6 +126,7 @@ def plan() -> dict:
             "json_schema_enforced": True,
         },
         "decoder": decoder,
+        "output_contract": output_contract(),
         "model_repository": "model",
         "model_revision": "revision",
         "runtime_digest": "sha256:runtime",
@@ -142,6 +144,7 @@ def plan() -> dict:
         "unexpected_instance_uids": [],
         "historical_replay_sha256": "a" * 64,
         "decoder": decoder,
+        "output_contract": output_contract(),
     }
     result["plan_sha256"] = recompute_plan_sha256(result)
     return result
@@ -330,4 +333,178 @@ def test_runtime_response_identity_mismatch_is_rejected(tmp_path: Path) -> None:
             medgemma_knee_meniscus_prompt_v2(),
             provision_plan_sha256="provision-plan",
             snapshot_manifest_sha256="snapshot",
+        )
+
+
+class FixedResultClient:
+    def __init__(self, result: dict):
+        self.result = result
+        self.calls = 0
+
+    def analyze_window(self, window, prompt):
+        self.calls += 1
+        raw = json.dumps(self.result)
+        return {
+            "model": window["model_repository"],
+            "model_revision": window["model_revision"],
+            "window_id": window["window_id"],
+            "role": window["role"],
+            "instance_uids": window["instance_uids"],
+            "evidence_ids": window["evidence_ids"],
+            "output_schema": window["output_schema"],
+            "prompt_sha256": window["prompt_sha256"],
+            "generation": window["generation"],
+            "decoder": window["decoder"],
+            "output_contract": window["output_contract"],
+            "runtime_digest": window["runtime_digest"],
+            "run_plan_sha256": "plan",
+            "provision_plan_sha256": "provision",
+            "model_snapshot_manifest_sha256": "snapshot",
+            "result": self.result,
+            "raw_text": raw,
+            "schema_status": "valid",
+            "validation_errors": [],
+            "attempts": [
+                {
+                    "attempt": 0,
+                    "raw_text": raw,
+                    "result": self.result,
+                    "normalization_actions": [],
+                    "validation_errors": [],
+                }
+            ],
+            "accepted_attempt": 0,
+            "metrics": {"total_seconds": 0.0, "oom": False},
+        }
+
+
+def _runner_evidence_map() -> dict:
+    return {
+        "image-000001": {
+            "evidence_id": "image-000001",
+            "series_uid": "1.2.4",
+            "geometric_index": 0,
+            "window_ids": ["primary-volume-window-0001"],
+        },
+        "image-000002": {
+            "evidence_id": "image-000002",
+            "series_uid": "1.2.4",
+            "geometric_index": 1,
+            "window_ids": ["primary-volume-window-0002"],
+        },
+    }
+
+
+def test_runner_preserves_adjacent_evidence_without_requesting_correction(
+    tmp_path: Path,
+) -> None:
+    window = plan()["windows"][0]
+    result = result_for_evidence("image-000002")
+    client = FixedResultClient(result)
+    completed = execute_window(
+        client,
+        window,
+        medgemma_knee_meniscus_prompt_v2(),
+        tmp_path,
+        "plan",
+        "provision",
+        "snapshot",
+        _runner_evidence_map(),
+        "evidence-map",
+    )
+
+    assert client.calls == 1
+    assert completed["canonical_result"] == result
+    assert completed["result"] == result
+    assert completed["evidence_summary"]["scope_counts"]["adjacent_same_series"] == 1
+    assert completed["evidence_summary"]["findings"][0][
+        "link_eligible_evidence_ids"
+    ] == []
+    assert (tmp_path / f"{window['window_id']}.integration-safe.json").exists()
+    assert (tmp_path / f"{window['window_id']}.evidence-trace.json").exists()
+
+
+def test_runner_quarantines_unknown_evidence_but_keeps_the_finding(tmp_path: Path) -> None:
+    window = plan()["windows"][0]
+    result = result_for_evidence("image-999999")
+    completed = execute_window(
+        FixedResultClient(result),
+        window,
+        medgemma_knee_meniscus_prompt_v2(),
+        tmp_path,
+        "plan",
+        "provision",
+        "snapshot",
+        _runner_evidence_map(),
+        "evidence-map",
+    )
+
+    assert completed["canonical_result"]["findings"][0]["traceable_evidence"][0][
+        "export_id"
+    ] == "image-999999"
+    assert len(completed["result"]["findings"]) == 1
+    assert completed["result"]["findings"][0]["traceable_evidence"] == []
+    assert completed["evidence_summary"]["counts"]["unverified"] == 1
+
+
+def test_resume_rederives_and_rejects_changed_integration_safe_result(tmp_path: Path) -> None:
+    window = plan()["windows"][0]
+    result = result_for_evidence("image-000002")
+    client = FixedResultClient(result)
+    execute_window(
+        client,
+        window,
+        medgemma_knee_meniscus_prompt_v2(),
+        tmp_path,
+        "plan",
+        "provision",
+        "snapshot",
+        _runner_evidence_map(),
+        "evidence-map",
+    )
+    safe_path = tmp_path / f"{window['window_id']}.integration-safe.json"
+    safe = json.loads(safe_path.read_text(encoding="utf-8"))
+    safe["global_limitations"] = ["changed"]
+    safe_path.write_text(json.dumps(safe), encoding="utf-8")
+
+    with pytest.raises(MRIStudyError):
+        execute_window(
+            client,
+            window,
+            medgemma_knee_meniscus_prompt_v2(),
+            tmp_path,
+            "plan",
+            "provision",
+            "snapshot",
+            _runner_evidence_map(),
+            "evidence-map",
+        )
+    assert client.calls == 1
+
+
+def test_initial_run_rejects_runtime_result_that_differs_from_raw_replay(
+    tmp_path: Path,
+) -> None:
+    window = plan()["windows"][0]
+    canonical = result_for_evidence("image-000001")
+    client = FixedResultClient(canonical)
+    original = client.analyze_window
+
+    def mismatched(window, prompt):
+        response = original(window, prompt)
+        response["result"] = result_for_evidence("image-000002")
+        return response
+
+    client.analyze_window = mismatched
+    with pytest.raises(MRIStudyError, match="two structural corrections"):
+        execute_window(
+            client,
+            window,
+            medgemma_knee_meniscus_prompt_v2(),
+            tmp_path,
+            "plan",
+            "provision",
+            "snapshot",
+            _runner_evidence_map(),
+            "evidence-map",
         )

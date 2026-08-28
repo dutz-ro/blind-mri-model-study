@@ -7,16 +7,22 @@ from ..clinical_schema import parse_structured_model_result
 from ..errors import MRIStudyError
 from ..profiles import StudyProfile
 from ..prompts import medgemma_window_prompt
+from ..schema_registry import load_schema
 from ..utils import atomic_json, canonical_json, load_json, sha256_bytes, sha256_file, utc_now
 from .evidence import ROLE_ORDER
 from .evidence_trace import (
+    EVIDENCE_TRACE_POLICY,
     aggregate_summaries,
     coverage_warning,
-    grade_result_evidence,
+    project_result_evidence,
+    verify_evidence_projection,
 )
 from .integration import integrate_multiplanar, integrate_series, validate_integration_evidence
 from .integrity import require_complete_plan
-from .output_contract import classify_output
+from .output_contract import (
+    classify_output,
+    output_contract,
+)
 from .validation import evidence_traceability_warnings, validate_window_result
 
 # Traceability below this level is reported prominently but never blocks a run.
@@ -31,6 +37,30 @@ class WindowInferenceClient(Protocol):
     ) -> dict[str, Any]: ...
 
 
+def _evidence_map_from_plan(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Build the minimum verified map needed by synthetic/local runner tests.
+
+    Production always supplies the independently validated evidence manifest.
+    The derived map keeps unit and dry-run callers anatomy-agnostic without
+    weakening production checks.
+    """
+    derived: dict[str, dict[str, Any]] = {}
+    for window in plan.get("windows") or []:
+        for offset, evidence_id in enumerate(window.get("evidence_ids") or []):
+            entry = derived.setdefault(
+                evidence_id,
+                {
+                    "evidence_id": evidence_id,
+                    "series_uid": window.get("series_uid"),
+                    "role": window.get("role"),
+                    "geometric_index": int(window.get("start_index", 0)) + offset,
+                    "window_ids": [],
+                },
+            )
+            entry["window_ids"].append(window["window_id"])
+    return derived
+
+
 def _artifact_manifest(
     window: dict[str, Any],
     raw_path: Path,
@@ -38,14 +68,16 @@ def _artifact_manifest(
     response: dict[str, Any],
     attempts: list[str],
     accepted_artifact: str,
+    integration_safe_path: Path,
+    evidence_trace_path: Path,
+    evidence_map_sha256: str,
     plan_sha256: str,
     provision_plan_sha256: str,
     snapshot_manifest_sha256: str,
-    profile: StudyProfile | None = None,
 ) -> dict[str, Any]:
     metrics = response.get("metrics") or {}
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "window_id": window["window_id"],
         "role": window["role"],
         "study_uid": window["study_uid"],
@@ -75,6 +107,13 @@ def _artifact_manifest(
         "accepted_response_sha256": sha256_file(raw_path.parent / accepted_artifact),
         "structured_artifact": structured_path.name,
         "structured_sha256": sha256_file(structured_path),
+        "integration_safe_artifact": integration_safe_path.name,
+        "integration_safe_sha256": sha256_file(integration_safe_path),
+        "evidence_trace_artifact": evidence_trace_path.name,
+        "evidence_trace_sha256": sha256_file(evidence_trace_path),
+        "evidence_map_sha256": evidence_map_sha256,
+        "output_contract": output_contract(),
+        "evidence_trace_policy": EVIDENCE_TRACE_POLICY,
         "latency_seconds": metrics.get("total_seconds"),
         "encoding_seconds": metrics.get("encoding_seconds"),
         "generation_seconds": metrics.get("generation_seconds"),
@@ -98,10 +137,20 @@ def validate_completed_window(
     plan_sha256: str,
     provision_plan_sha256: str,
     snapshot_manifest_sha256: str,
+    evidence_map: dict[str, dict[str, Any]],
+    evidence_map_sha256: str,
 ) -> dict[str, Any]:
     if not (raw_path.exists() and structured_path.exists() and manifest_path.exists()):
         raise MRIStudyError(f"Partial window artifacts for {window['window_id']}.")
     manifest = load_json(manifest_path)
+    if manifest.get("schema_version") != 2:
+        raise MRIStudyError(
+            f"Window artifact uses an incompatible policy; start a new run: {window['window_id']}"
+        )
+    integration_safe_path = raw_path.parent / manifest["integration_safe_artifact"]
+    evidence_trace_path = raw_path.parent / manifest["evidence_trace_artifact"]
+    if not integration_safe_path.is_file() or not evidence_trace_path.is_file():
+        raise MRIStudyError(f"Window evidence artifacts are missing: {window['window_id']}")
     expected = {
         "window_id": window["window_id"],
         "role": window["role"],
@@ -119,6 +168,11 @@ def validate_completed_window(
         "decoder": window["decoder"],
         "raw_sha256": sha256_file(raw_path),
         "structured_sha256": sha256_file(structured_path),
+        "integration_safe_sha256": sha256_file(integration_safe_path),
+        "evidence_trace_sha256": sha256_file(evidence_trace_path),
+        "evidence_map_sha256": evidence_map_sha256,
+        "evidence_trace_policy": EVIDENCE_TRACE_POLICY,
+        "output_contract": output_contract(),
         "schema_status": "valid",
     }
     for key, value in expected.items():
@@ -141,8 +195,8 @@ def validate_completed_window(
         manifest_path.name,
         *manifest.get("correction_artifacts", []),
     }
-    if manifest.get("evidence_trace_artifact"):
-        listed_artifacts.add(manifest["evidence_trace_artifact"])
+    listed_artifacts.add(manifest["evidence_trace_artifact"])
+    listed_artifacts.add(manifest["integration_safe_artifact"])
     actual_artifacts = {
         path.name for path in raw_path.parent.glob(f"{window['window_id']}.*.json")
     }
@@ -163,8 +217,8 @@ def validate_completed_window(
     )
     if runtime_attempt is None:
         raise MRIStudyError(f"Accepted runtime attempt is missing: {window['window_id']}")
-    schema = load_json(Path(__file__).parents[1] / "schemas/knee-meniscus-finding-v2.schema.json")
-    replay = classify_output(runtime_attempt["raw_text"], schema, window["evidence_ids"])
+    schema = load_schema(window["output_schema"])
+    replay = classify_output(runtime_attempt["raw_text"], schema)
     if replay.result is None:
         raise MRIStudyError(f"Accepted runtime output is not reproducible: {window['window_id']}")
     accepted_structured = replay.result
@@ -173,16 +227,39 @@ def validate_completed_window(
         raise MRIStudyError(
             f"Accepted response differs from structured result: {window['window_id']}"
         )
-    errors = validate_window_result(structured, window["evidence_ids"])
+    errors = validate_window_result(structured)
     if errors:
         raise MRIStudyError(f"Stored window result is invalid: {window['window_id']}")
+    safe, actions, summary = project_result_evidence(structured, window, evidence_map)
+    projection_errors = verify_evidence_projection(structured, safe, actions)
+    if projection_errors:
+        raise MRIStudyError(f"Stored evidence projection is invalid: {window['window_id']}")
+    if safe != load_json(integration_safe_path):
+        raise MRIStudyError(f"Integration-safe result changed: {window['window_id']}")
+    trace = load_json(evidence_trace_path)
+    expected_trace = {
+        "window_id": window["window_id"],
+        "role": window["role"],
+        "policy": EVIDENCE_TRACE_POLICY,
+        "source_structured_sha256": sha256_file(structured_path),
+        "integration_safe_sha256": sha256_file(integration_safe_path),
+        "evidence_map_sha256": evidence_map_sha256,
+        "input_list_sha256": window["input_list_sha256"],
+        "summary": summary,
+        "actions": actions,
+        "warnings": evidence_traceability_warnings(structured, window["evidence_ids"]),
+    }
+    if trace != expected_trace:
+        raise MRIStudyError(f"Evidence trace changed: {window['window_id']}")
     return {
         "window_id": window["window_id"],
         "role": window["role"],
         "series_uid": window["series_uid"],
         "start_index": window["start_index"],
         "end_index": window["end_index"],
-        "result": structured,
+        "result": safe,
+        "canonical_result": structured,
+        "evidence_summary": summary,
         "manifest": manifest,
     }
 
@@ -195,7 +272,8 @@ def execute_window(
     plan_sha256: str,
     provision_plan_sha256: str,
     snapshot_manifest_sha256: str,
-    plan_evidence_ids: set[str] | None = None,
+    evidence_map: dict[str, dict[str, Any]] | None = None,
+    evidence_map_sha256: str = "",
 ) -> dict[str, Any]:
     raw_path = windows_dir / f"{window['window_id']}.raw.json"
     structured_path = windows_dir / f"{window['window_id']}.structured.json"
@@ -210,6 +288,8 @@ def execute_window(
             plan_sha256,
             provision_plan_sha256,
             snapshot_manifest_sha256,
+            evidence_map or {},
+            evidence_map_sha256,
         )
 
     response = client.analyze_window(window, base_prompt)
@@ -245,6 +325,7 @@ def execute_window(
         "prompt_sha256": window["prompt_sha256"],
         "generation": window["generation"],
         "decoder": window["decoder"],
+        "output_contract": window["output_contract"],
         "runtime_digest": window["runtime_digest"],
         "run_plan_sha256": plan_sha256,
         "provision_plan_sha256": provision_plan_sha256,
@@ -259,16 +340,29 @@ def execute_window(
     if mismatches:
         errors.append(f"Runtime response provenance mismatch: {mismatches}")
     structured = None
-    try:
-        structured = parse_structured_model_result(response.get("result") or {})
-        errors.extend(validate_window_result(structured, window["evidence_ids"]))
-    except (ValueError, TypeError, KeyError) as error:
-        errors.append(str(error))
     if accepted_attempt is None or response.get("schema_status") != "valid":
         errors.append("Runtime did not accept a valid structural attempt.")
     accepted_artifact = f"{window['window_id']}.attempt-{int(accepted_attempt or 0):02d}.json"
     if not attempts or accepted_artifact not in attempts:
         errors.append("Accepted runtime attempt artifact is missing.")
+    if accepted_details is not None:
+        try:
+            replay = classify_output(
+                str(accepted_details.get("raw_text") or ""),
+                load_schema(window["output_schema"]),
+            )
+            if replay.result is None:
+                errors.append("Accepted runtime output is not canonically reproducible.")
+            else:
+                structured = replay.result
+                runtime_result = parse_structured_model_result(response.get("result") or {})
+                if runtime_result != structured:
+                    errors.append("Runtime result differs from local canonical replay.")
+                if accepted_details.get("result") != structured:
+                    errors.append("Accepted attempt result differs from local canonical replay.")
+                errors.extend(validate_window_result(structured))
+        except (ValueError, TypeError, KeyError) as error:
+            errors.append(str(error))
     if structured is None or errors:
         invalid_path = windows_dir / f"{window['window_id']}.invalid.json"
         atomic_json(
@@ -290,23 +384,29 @@ def execute_window(
     # already validated and is never discarded here: a finding that cannot be
     # traced to an image is preserved and labelled, because losing a produced
     # result is worse than reporting it with an explicit caveat.
-    graded, trace_actions, trace_summary = grade_result_evidence(
-        structured,
-        window["evidence_ids"],
-        plan_evidence_ids,
+    safe, trace_actions, trace_summary = project_result_evidence(
+        structured, window, evidence_map or {}
     )
+    projection_errors = verify_evidence_projection(structured, safe, trace_actions)
+    if projection_errors:
+        raise MRIStudyError(f"Evidence projection failed: {window['window_id']}")
     trace_warnings = evidence_traceability_warnings(structured, window["evidence_ids"])
     trace_path = windows_dir / f"{window['window_id']}.evidence-trace.json"
+    integration_safe_path = windows_dir / f"{window['window_id']}.integration-safe.json"
+    atomic_json(integration_safe_path, safe)
     atomic_json(
         trace_path,
         {
             "window_id": window["window_id"],
             "role": window["role"],
+            "policy": EVIDENCE_TRACE_POLICY,
+            "source_structured_sha256": sha256_file(structured_path),
+            "integration_safe_sha256": sha256_file(integration_safe_path),
+            "evidence_map_sha256": evidence_map_sha256,
+            "input_list_sha256": window["input_list_sha256"],
             "summary": trace_summary,
             "actions": trace_actions,
             "warnings": trace_warnings,
-            "graded_result": graded,
-            "graded_at": utc_now(),
         },
     )
 
@@ -317,11 +417,13 @@ def execute_window(
         response,
         attempts,
         accepted_artifact,
+        integration_safe_path,
+        trace_path,
+        evidence_map_sha256,
         plan_sha256,
         provision_plan_sha256,
         snapshot_manifest_sha256,
     )
-    manifest["evidence_trace_artifact"] = trace_path.name
     manifest["evidence_summary"] = trace_summary
     manifest["manifest_sha256"] = sha256_bytes(
         canonical_json({key: value for key, value in manifest.items() if key != "manifest_sha256"})
@@ -333,8 +435,8 @@ def execute_window(
         "series_uid": window["series_uid"],
         "start_index": window["start_index"],
         "end_index": window["end_index"],
-        "result": structured,
-        "graded_result": graded,
+        "result": safe,
+        "canonical_result": structured,
         "evidence_summary": trace_summary,
         "evidence_warnings": trace_warnings,
         "manifest": manifest,
@@ -372,11 +474,8 @@ def run_window_plan(
     for path in (windows_dir, series_dir, integration_dir):
         path.mkdir(exist_ok=True, mode=0o700)
 
-    # The union across the arm lets a citation be distinguished as a real slice
-    # from an overlapping window rather than an identifier that exists nowhere.
-    plan_evidence_ids: set[str] = set()
-    for item in plan["windows"]:
-        plan_evidence_ids |= set(item["evidence_ids"])
+    effective_evidence_map = evidence_map or _evidence_map_from_plan(plan)
+    evidence_map_sha256 = plan.get("evidence_map_sha256", "")
 
     window_results = []
     for window in plan["windows"]:
@@ -393,7 +492,8 @@ def run_window_plan(
                 plan["plan_sha256"],
                 provision_plan_sha256,
                 snapshot_manifest_sha256,
-                plan_evidence_ids,
+                effective_evidence_map,
+                evidence_map_sha256,
             )
         )
 
@@ -405,26 +505,18 @@ def run_window_plan(
         if not role_windows:
             raise MRIStudyError(f"No completed windows for required role: {role}")
         series_uid = role_windows[0]["series_uid"]
-        # Integrate the graded results so a citation recovered from finding_id
-        # survives into the series and multiplanar output. Merging reads only
-        # traceable_evidence and counter_evidence, so a repair applied after
-        # this point would be silently discarded.
-        integration_input = [
-            {**item, "result": item.get("graded_result") or item["result"]}
-            for item in role_windows
-        ]
         result, provenance = integrate_series(
             role,
             series_uid,
-            integration_input,
-            evidence_map=evidence_map,
+            role_windows,
+            evidence_map=effective_evidence_map,
             policy=profile.integration if profile else None,
             schema_version=plan.get("output_schema") if profile else None,
             body_region=profile.body_region if profile else None,
         )
-        if evidence_map is not None:
-            validate_integration_evidence(result, evidence_map)
-            errors = validate_window_result(result, list(evidence_map))
+        if effective_evidence_map:
+            validate_integration_evidence(result, effective_evidence_map)
+            errors = validate_window_result(result)
             if errors:
                 raise MRIStudyError(f"Series integration failed validation: {role}")
         parse_structured_model_result(result)
@@ -445,9 +537,9 @@ def run_window_plan(
         schema_version=plan.get("output_schema") if profile else None,
         body_region=profile.body_region if profile else None,
     )
-    if evidence_map is not None:
-        validate_integration_evidence(final_result, evidence_map)
-        errors = validate_window_result(final_result, list(evidence_map))
+    if effective_evidence_map:
+        validate_integration_evidence(final_result, effective_evidence_map)
+        errors = validate_window_result(final_result)
         if errors:
             raise MRIStudyError("Multiplanar integration failed evidence validation.")
     parse_structured_model_result(final_result)
