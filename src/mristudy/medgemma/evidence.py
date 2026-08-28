@@ -118,13 +118,20 @@ def ordered_series_instances(root: Path, role_by_series: dict[str, str]) -> dict
 
 def assign_global_evidence(
     series_by_uid: dict[str, dict],
+    role_order: tuple[str, ...] | None = None,
 ) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Assign evidence identifiers once, in a fixed role order.
+
+    The order fixes global numbering, so it is part of the plan contract rather
+    than an implementation detail. A profile supplies its own roles; without one
+    the knee order is used so existing plans keep their identifiers.
+    """
     by_role = {item["role"]: item for item in series_by_uid.values()}
     evidence_map: dict[str, dict] = {}
     uid_to_evidence: dict[str, dict] = {}
     seen_sop_uids = set()
     next_id = 1
-    for role in ROLE_ORDER:
+    for role in role_order or ROLE_ORDER:
         if role not in by_role:
             raise ValueError(f"Missing required MedGemma role: {role}")
         series = by_role[role]

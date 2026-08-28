@@ -35,6 +35,7 @@ from .medgemma.probes import run_required_probes
 from .medgemma.replay import replay_acceptance, replay_historical_runs
 from .medgemma.runner import run_window_plan
 from .paths import StudyPaths
+from .profiles import load_profile_by_name
 from .prompts import medgemma_knee_meniscus_prompt_v2
 from .provenance import append_event
 from .state import Stage, StudyState
@@ -258,19 +259,26 @@ def register_backend_commands(
             raise MRIStudyError("MedGemma planning requires CLOUD_PLAN_READY.")
         orthanc = load_json(paths.manifests / "local-orthanc-store.json")
         catalog = _anonymous_series_catalog(paths.anonymized)
-        requested = [
-            ("primary-volume", "SAG 3D DP FS"),
-            ("sagittal-meniscus", "MPR SAG DP FS"),
-            ("coronal-confirmation", "MPR COR DP FS"),
-            ("axial-confirmation", "MPR AX DP FS"),
-            ("anatomy-correlation", "SAG T1 TSE"),
-        ]
+        # Series selection comes from the study profile, so a different body
+        # region needs a profile rather than a code change.
+        profile = load_profile_by_name(state.profile)
         role_by_series = {}
-        for role, marker in requested:
-            matches = [item for item in catalog if marker.lower() in item["description"].lower()]
-            if len(matches) != 1:
-                raise MRIStudyError(f"Expected exactly one anonymous series for role {role}.")
-            role_by_series[matches[0]["series_uid"]] = role
+        for requested_role in profile.series_roles:
+            matches = [
+                item for item in catalog if requested_role.matches(item["description"])
+            ]
+            if len(matches) > 1:
+                raise MRIStudyError(
+                    f"Series role {requested_role.role} matched {len(matches)} series; "
+                    "the profile pattern must identify exactly one."
+                )
+            if not matches:
+                if requested_role.required:
+                    raise MRIStudyError(
+                        f"No anonymous series matches required role {requested_role.role}."
+                    )
+                continue
+            role_by_series[matches[0]["series_uid"]] = requested_role.role
         series = ordered_series_instances(paths.anonymized, role_by_series)
         selected_uids = {
             instance["sop_instance_uid"]
@@ -288,7 +296,10 @@ def register_backend_commands(
             {
                 "series_uid": item["series_uid"],
                 "series_description": item["description"],
-                "reason": "Excluded from primary meniscal analysis by profile.",
+                "reason": (
+                    "Excluded by profile: not selected for a role in "
+                    f"{profile.name}."
+                ),
             }
             for item in catalog
             if item["series_uid"] not in role_by_series
@@ -305,6 +316,7 @@ def register_backend_commands(
             runtime_digest=runtime_digest,
             historical_replay_sha256=replay_report["report_sha256"],
             excluded_series=excluded,
+            profile=profile,
         )
         atomic_json(paths.state / "medgemma-run-plan.json", plan)
         atomic_json(paths.manifests / "medgemma-evidence-map.json", evidence_map)

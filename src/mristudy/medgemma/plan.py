@@ -3,7 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 from ..clinical_schema import load_knee_meniscus_schema
-from ..prompts import medgemma_json_suffix_v2, medgemma_knee_meniscus_prompt_v2
+from ..profiles import StudyProfile
+from ..prompts import (
+    json_suffix_for,
+    medgemma_json_suffix_v2,
+    medgemma_knee_meniscus_prompt_v2,
+    medgemma_region_prompt,
+)
+from ..schema_registry import load_schema
 from ..utils import canonical_json, sha256_bytes, utc_now
 from .evidence import ROLE_ORDER, assign_global_evidence, finalize_evidence_map
 from .integrity import recompute_plan_sha256
@@ -22,16 +29,36 @@ def build_medgemma_window_plan(
     excluded_series: list[dict[str, str]],
     window_size: int = 32,
     minimum_overlap: int = 8,
+    profile: StudyProfile | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    evidence_map, _ = assign_global_evidence(series_by_uid)
+    # Without a profile the knee prompt, schema and role order are used, so an
+    # existing plan regenerates to the same shape.
+    if profile is None:
+        role_order = ROLE_ORDER
+        output_schema = "knee-meniscus-finding-v2"
+        base_prompt = medgemma_knee_meniscus_prompt_v2()
+        output_suffix = medgemma_json_suffix_v2()
+        decoder = decoder_contract(load_knee_meniscus_schema())
+    else:
+        role_order = tuple(
+            role for role in profile.role_order if role in
+            {series["role"] for series in series_by_uid.values()}
+        )
+        output_schema = profile.output_schema
+        base_prompt = medgemma_region_prompt(
+            profile.body_region, profile.prompt_region_block, output_schema
+        )
+        output_suffix = json_suffix_for(output_schema)
+        decoder = decoder_contract(load_schema(output_schema))
+        window_size = profile.maximum_window_size
+        minimum_overlap = profile.minimum_overlap
+
+    evidence_map, _ = assign_global_evidence(series_by_uid, role_order)
     by_role = {series["role"]: series for series in series_by_uid.values()}
     windows: list[dict[str, Any]] = []
-    base_prompt = medgemma_knee_meniscus_prompt_v2()
-    output_suffix = medgemma_json_suffix_v2()
     prompt_sha256 = sha256_bytes(base_prompt.encode())
-    decoder = decoder_contract(load_knee_meniscus_schema())
 
-    for role in ROLE_ORDER:
+    for role in role_order:
         series = by_role[role]
         series_plan = plan_windows(
             series["instances"],
@@ -78,7 +105,7 @@ def build_medgemma_window_plan(
                     "overlap_previous": window.overlap_previous,
                     "overlap_next": window.overlap_next,
                     "prompt_sha256": sha256_bytes(window_prompt.encode()),
-                    "output_schema": "knee-meniscus-finding-v2",
+                    "output_schema": output_schema,
                     "max_new_tokens": 4096,
                     "maximum_structural_corrections": 2,
                     "generation": {
@@ -153,7 +180,7 @@ def build_medgemma_window_plan(
         "runtime_digest": runtime_digest,
         "historical_replay_sha256": historical_replay_sha256,
         "prompt_sha256": prompt_sha256,
-        "output_schema": "knee-meniscus-finding-v2",
+        "output_schema": output_schema,
         "decoder": decoder,
         "orthanc_manifest_sha256": orthanc_manifest["manifest_sha256"],
         "evidence_map_sha256": evidence_manifest["map_sha256"],
