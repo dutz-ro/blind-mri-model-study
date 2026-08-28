@@ -109,3 +109,24 @@ def json_suffix_for(schema_version: str) -> str:
         "Return JSON now. Output exactly one object and nothing else. Stop after the closing\n"
         f"brace. Required JSON Schema:\n{schema}"
     )
+
+
+def medgemma_prompt_for_profile(profile: object) -> str:
+    """Build the immutable base prompt from a validated study profile."""
+    return medgemma_region_prompt(
+        str(profile.body_region),
+        str(profile.prompt_region_block),
+        str(profile.output_schema),
+    )
+
+
+def medgemma_window_prompt(base_prompt: str, window: dict[str, object]) -> str:
+    """Build one window prompt identically in planning, dry-run and execution."""
+    return (
+        base_prompt
+        + f"\nThis window has role {window['role']}, ID {window['window_id']}, and "
+        + f"series description {window['series_description']!r}. Report only findings "
+        + "evaluable from this contiguous window. Use indeterminate for fields requiring "
+        + "another plane. Cite only the supplied global evidence IDs.\n"
+        + json_suffix_for(str(window["output_schema"]))
+    )

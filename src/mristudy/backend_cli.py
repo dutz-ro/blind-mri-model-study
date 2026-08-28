@@ -36,7 +36,7 @@ from .medgemma.replay import replay_acceptance, replay_historical_runs
 from .medgemma.runner import run_window_plan
 from .paths import StudyPaths
 from .profiles import load_profile_by_name
-from .prompts import medgemma_knee_meniscus_prompt_v2
+from .prompts import medgemma_prompt_for_profile
 from .provenance import append_event
 from .state import Stage, StudyState
 from .utils import atomic_json, load_json
@@ -385,6 +385,7 @@ def register_backend_commands(
                 raise MRIStudyError("MedGemma run directory does not exist.")
 
         client = MedGemmaHttpClient(timeout=3600)
+        profile = load_profile_by_name(state.profile)
         evidence_manifest = load_json(paths.manifests / "medgemma-evidence-map.json")
         evidence_map = require_valid_evidence_map(evidence_manifest, run_plan)
         preflight = load_json(paths.manifests / "medgemma-window-probes.json")
@@ -404,17 +405,18 @@ def register_backend_commands(
             client,
             run_plan,
             run_dir,
-            medgemma_knee_meniscus_prompt_v2(),
+            medgemma_prompt_for_profile(profile),
             resume=bool(resume_run_id),
             evidence_map=evidence_map,
             provision_plan_sha256=provision["plan_sha256"],
             snapshot_manifest_sha256=provision["runtime"][
                 "model_snapshot_manifest_sha256"
             ],
+            profile=profile,
         )
         lock = {
             "run": run_id,
-            "schema_version": "knee-meniscus-finding-v2",
+            "schema_version": run_plan["output_schema"],
             "provider": "scaleway",
             "runtime": load_json(paths.state / "scaleway-provision-plan.json")["runtime"],
             "run_plan_sha256": run_plan["plan_sha256"],
@@ -581,6 +583,9 @@ def register_backend_commands(
             model_snapshot_manifest_sha256=model_snapshot_manifest_sha256,
             medgemma_run_plan_sha256=medgemma_run_plan["plan_sha256"],
             evidence_map_sha256=medgemma_run_plan["evidence_map_sha256"],
+            output_schema=medgemma_run_plan["output_schema"],
+            prompt_sha256=medgemma_run_plan["prompt_sha256"],
+            study_id=study_id,
         )
         atomic_json(paths.state / "scaleway-provision-plan.json", plan)
         typer.echo(

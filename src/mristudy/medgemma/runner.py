@@ -5,7 +5,8 @@ from typing import Any, Protocol
 
 from ..clinical_schema import parse_structured_model_result
 from ..errors import MRIStudyError
-from ..prompts import medgemma_json_suffix_v2
+from ..profiles import StudyProfile
+from ..prompts import medgemma_window_prompt
 from ..utils import atomic_json, canonical_json, load_json, sha256_bytes, sha256_file, utc_now
 from .evidence import ROLE_ORDER
 from .evidence_trace import (
@@ -40,6 +41,7 @@ def _artifact_manifest(
     plan_sha256: str,
     provision_plan_sha256: str,
     snapshot_manifest_sha256: str,
+    profile: StudyProfile | None = None,
 ) -> dict[str, Any]:
     metrics = response.get("metrics") or {}
     manifest = {
@@ -349,6 +351,7 @@ def run_window_plan(
     evidence_map: dict[str, dict[str, Any]] | None = None,
     provision_plan_sha256: str,
     snapshot_manifest_sha256: str,
+    profile: StudyProfile | None = None,
 ) -> dict[str, Any]:
     require_complete_plan(plan)
     plan_path = run_dir / "run-plan.json"
@@ -377,14 +380,7 @@ def run_window_plan(
 
     window_results = []
     for window in plan["windows"]:
-        window_prompt = (
-            prompt
-            + f"\nThis window has role {window['role']}, ID {window['window_id']}, and "
-            + f"series description {window['series_description']!r}. Report only findings "
-            + "evaluable from this contiguous window. Use indeterminate for fields requiring "
-            + "another plane. Cite only the supplied global evidence IDs.\n"
-            + medgemma_json_suffix_v2()
-        )
+        window_prompt = medgemma_window_prompt(prompt, window)
         expected_prompt_sha256 = sha256_bytes(window_prompt.encode())
         if window["prompt_sha256"] != expected_prompt_sha256:
             raise MRIStudyError(f"Window prompt hash mismatch: {window['window_id']}")
@@ -403,7 +399,8 @@ def run_window_plan(
 
     series_results = []
     planned_roles = {window["role"] for window in plan["windows"]}
-    for role in (item for item in ROLE_ORDER if item in planned_roles):
+    role_order = profile.role_order if profile else ROLE_ORDER
+    for role in (item for item in role_order if item in planned_roles):
         role_windows = [item for item in window_results if item["role"] == role]
         if not role_windows:
             raise MRIStudyError(f"No completed windows for required role: {role}")
@@ -421,6 +418,9 @@ def run_window_plan(
             series_uid,
             integration_input,
             evidence_map=evidence_map,
+            policy=profile.integration if profile else None,
+            schema_version=plan.get("output_schema") if profile else None,
+            body_region=profile.body_region if profile else None,
         )
         if evidence_map is not None:
             validate_integration_evidence(result, evidence_map)
@@ -439,7 +439,12 @@ def run_window_plan(
             }
         )
 
-    final_result, final_provenance = integrate_multiplanar(series_results)
+    final_result, final_provenance = integrate_multiplanar(
+        series_results,
+        policy=profile.integration if profile else None,
+        schema_version=plan.get("output_schema") if profile else None,
+        body_region=profile.body_region if profile else None,
+    )
     if evidence_map is not None:
         validate_integration_evidence(final_result, evidence_map)
         errors = validate_window_result(final_result, list(evidence_map))

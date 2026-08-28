@@ -7,7 +7,6 @@ import subprocess
 from pathlib import Path
 
 from ..errors import MRIStudyError
-from ..prompts import medgemma_knee_meniscus_prompt_v2
 from ..utils import atomic_json, canonical_json, sha256_bytes, sha256_file, utc_now
 
 
@@ -153,6 +152,9 @@ def final_provision_plan(
     model_snapshot_manifest_sha256: str | None = None,
     medgemma_run_plan_sha256: str | None = None,
     evidence_map_sha256: str | None = None,
+    output_schema: str = "knee-meniscus-finding-v2",
+    prompt_sha256: str | None = None,
+    study_id: str = "lex-knee-mri",
 ) -> dict:
     if not medgemma_run_plan_sha256 or not evidence_map_sha256:
         raise MRIStudyError("Provision plan must bind MedGemma run and evidence-map digests.")
@@ -185,7 +187,9 @@ def final_provision_plan(
         raise MRIStudyError("Scaleway did not return an EUR hourly price for L4.")
     hard_hours = operation_plan["lifecycle"]["hard_ttl_hours"]
     compute_ceiling = round(l4_hourly * hard_hours, 4)
-    name = "mristudy-lex-knee-mri-medgemma"
+    if not prompt_sha256:
+        raise MRIStudyError("Provision plan must bind the exact MedGemma prompt digest.")
+    name = f"mristudy-{study_id}-medgemma"
     plan = {
         "schema_version": 1,
         "operation": "scaleway-gpu-provision",
@@ -205,7 +209,7 @@ def final_provision_plan(
                 "marketplace_storage_type": "instance_sbs",
                 "root_volume": "sbs:125GB:5000",
                 "public_ip": "new",
-                "tags": ["managed-by=mristudy", "study-id=lex-knee-mri"],
+                "tags": ["managed-by=mristudy", f"study-id={study_id}"],
             },
             "fallback": {
                 "type": "L40S-1-48G",
@@ -236,8 +240,8 @@ def final_provision_plan(
             "model_revision": operation_plan["medgemma"]["revision"],
             "model_snapshot_path": str(model_snapshot_path) if model_snapshot_path else None,
             "model_snapshot_manifest_sha256": model_snapshot_manifest_sha256,
-            "output_schema": "knee-meniscus-finding-v2",
-            "prompt_sha256": sha256_bytes(medgemma_knee_meniscus_prompt_v2().encode()),
+            "output_schema": output_schema,
+            "prompt_sha256": prompt_sha256,
             "container_digest": container_digest,
             "container_tar_path": str(container_tar_path),
             "container_tar_sha256": container_tar_sha256,

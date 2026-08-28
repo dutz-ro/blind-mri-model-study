@@ -8,7 +8,8 @@ from ..prompts import (
     json_suffix_for,
     medgemma_json_suffix_v2,
     medgemma_knee_meniscus_prompt_v2,
-    medgemma_region_prompt,
+    medgemma_prompt_for_profile,
+    medgemma_window_prompt,
 )
 from ..schema_registry import load_schema
 from ..utils import canonical_json, sha256_bytes, utc_now
@@ -45,9 +46,7 @@ def build_medgemma_window_plan(
             {series["role"] for series in series_by_uid.values()}
         )
         output_schema = profile.output_schema
-        base_prompt = medgemma_region_prompt(
-            profile.body_region, profile.prompt_region_block, output_schema
-        )
+        base_prompt = medgemma_prompt_for_profile(profile)
         output_suffix = json_suffix_for(output_schema)
         decoder = decoder_contract(load_schema(output_schema))
         window_size = profile.maximum_window_size
@@ -79,47 +78,53 @@ def build_medgemma_window_plan(
                     }
                 )
             )
+            window_record = {
+                "window_id": window.window_id,
+                "role": role,
+                "study_uid": series["instances"][0]["study_uid"],
+                "series_uid": series["series_uid"],
+                "series_description": series["series_description"],
+                "ordering_method": series["ordering_method"],
+                "ordering_warning": series["ordering_warning"],
+                "start_index": window.start_index,
+                "end_index": window.end_index,
+                "source_instance_count": len(series["instances"]),
+                "instance_uids": instance_uids,
+                "evidence_ids": evidence_ids,
+                "input_list_sha256": input_list_sha256,
+                "overlap_previous": window.overlap_previous,
+                "overlap_next": window.overlap_next,
+                "output_schema": output_schema,
+                "max_new_tokens": 4096,
+                "maximum_structural_corrections": 2,
+                "generation": {
+                    "do_sample": False,
+                    "repetition_penalty": 1.05,
+                    "no_repeat_ngram_size": 8,
+                    "json_schema_enforced": True,
+                },
+                "decoder": decoder,
+                "model_repository": model_repository,
+                "model_revision": model_revision,
+                "runtime_digest": runtime_digest,
+            }
+            # Keep the legacy suffix construction for a profile-less caller,
+            # but use the shared builder for every real profile-driven plan.
             window_prompt = (
-                base_prompt
-                + f"\nThis window has role {role}, ID {window.window_id}, and "
-                + f"series description {series['series_description']!r}. Report only findings "
-                + "evaluable from this contiguous window. Use indeterminate for fields requiring "
-                + "another plane. Cite only the supplied global evidence IDs.\n"
-                + output_suffix
+                medgemma_window_prompt(base_prompt, window_record)
+                if profile is not None
+                else (
+                    base_prompt
+                    + f"\nThis window has role {role}, ID {window.window_id}, and "
+                    + f"series description {series['series_description']!r}. Report only findings "
+                    + "evaluable from this contiguous window. Use indeterminate for fields "
+                    + "requiring "
+                    + "another plane. Cite only the supplied global evidence IDs.\n"
+                    + output_suffix
+                )
             )
-            windows.append(
-                {
-                    "window_id": window.window_id,
-                    "role": role,
-                    "study_uid": series["instances"][0]["study_uid"],
-                    "series_uid": series["series_uid"],
-                    "series_description": series["series_description"],
-                    "ordering_method": series["ordering_method"],
-                    "ordering_warning": series["ordering_warning"],
-                    "start_index": window.start_index,
-                    "end_index": window.end_index,
-                    "source_instance_count": len(series["instances"]),
-                    "instance_uids": instance_uids,
-                    "evidence_ids": evidence_ids,
-                    "input_list_sha256": input_list_sha256,
-                    "overlap_previous": window.overlap_previous,
-                    "overlap_next": window.overlap_next,
-                    "prompt_sha256": sha256_bytes(window_prompt.encode()),
-                    "output_schema": output_schema,
-                    "max_new_tokens": 4096,
-                    "maximum_structural_corrections": 2,
-                    "generation": {
-                        "do_sample": False,
-                        "repetition_penalty": 1.05,
-                        "no_repeat_ngram_size": 8,
-                        "json_schema_enforced": True,
-                    },
-                    "decoder": decoder,
-                    "model_repository": model_repository,
-                    "model_revision": model_revision,
-                    "runtime_digest": runtime_digest,
-                }
-            )
+            window_record["prompt_sha256"] = sha256_bytes(window_prompt.encode())
+            windows.append(window_record)
 
     evidence_manifest = finalize_evidence_map(evidence_map)
     source_slices = sum(len(series["instances"]) for series in series_by_uid.values())
@@ -181,6 +186,9 @@ def build_medgemma_window_plan(
         "historical_replay_sha256": historical_replay_sha256,
         "prompt_sha256": prompt_sha256,
         "output_schema": output_schema,
+        "profile": profile.name if profile else "knee-meniscus-v1",
+        "body_region": profile.body_region if profile else "knee",
+        "role_order": list(role_order),
         "decoder": decoder,
         "orthanc_manifest_sha256": orthanc_manifest["manifest_sha256"],
         "evidence_map_sha256": evidence_manifest["map_sha256"],

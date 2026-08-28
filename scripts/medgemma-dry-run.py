@@ -35,10 +35,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0] / "src"))
 
 from mristudy.medgemma.integrity import require_valid_evidence_map  # noqa: E402
 from mristudy.medgemma.runner import run_window_plan  # noqa: E402
-from mristudy.prompts import medgemma_knee_meniscus_prompt_v2  # noqa: E402
+from mristudy.profiles import load_profile_by_name  # noqa: E402
+from mristudy.prompts import medgemma_prompt_for_profile  # noqa: E402
 from mristudy.utils import load_json, sha256_bytes  # noqa: E402
-
-STUDY_ROOT = Path("/home/openclaw/mri-study-data/studies/lex-knee-mri")
 
 
 def _empty_valid_result(window: dict[str, Any]) -> dict[str, Any]:
@@ -132,17 +131,30 @@ class DryRunClient:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--study", required=True, help="study identifier")
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=Path.home() / "mri-study-data",
+        help="MRI study data root",
+    )
     parser.add_argument("--keep", action="store_true", help="keep the dry-run directory")
     args = parser.parse_args()
 
-    plan = load_json(STUDY_ROOT / "state/medgemma-run-plan.json")
-    evidence_manifest = load_json(STUDY_ROOT / "manifests/medgemma-evidence-map.json")
+    study_root = args.data_root / "studies" / args.study
+    if not study_root.is_dir():
+        raise SystemExit(f"Study not found: {study_root}")
+
+    plan = load_json(study_root / "state/medgemma-run-plan.json")
+    state = load_json(study_root / "state/status.json")
+    profile = load_profile_by_name(state["profile"])
+    evidence_manifest = load_json(study_root / "manifests/medgemma-evidence-map.json")
     evidence_map = require_valid_evidence_map(evidence_manifest, plan)
 
     provision_plan_sha256 = "dry-run-provision-plan"
     snapshot_manifest_sha256 = "dry-run-snapshot-manifest"
 
-    run_dir = STUDY_ROOT / "runs" / "dry-run-contract-verification"
+    run_dir = study_root / "runs" / "dry-run-contract-verification"
     if run_dir.exists():
         shutil.rmtree(run_dir)
 
@@ -151,10 +163,11 @@ def main() -> int:
         client,
         plan,
         run_dir,
-        medgemma_knee_meniscus_prompt_v2(),
+        medgemma_prompt_for_profile(profile),
         evidence_map=evidence_map,
         provision_plan_sha256=provision_plan_sha256,
         snapshot_manifest_sha256=snapshot_manifest_sha256,
+        profile=profile,
     )
 
     summary = {

@@ -123,12 +123,18 @@ def test_scaleway_final_plan_pins_cost_and_artifacts(tmp_path: Path) -> None:
         model_snapshot_manifest_sha256=sha256_file(snapshot / "manifest.sha256"),
         medgemma_run_plan_sha256="medgemma-plan",
         evidence_map_sha256="evidence-map",
+        output_schema="mri-finding-core-v1",
+        prompt_sha256="prompt",
+        study_id="study-test",
     )
     assert plan["resources"]["server"]["type"] == "L4-1-24G"
     assert plan["cost"]["l4_hourly"] == 0.7875
     assert plan["cost"]["l4_compute_ceiling_excluding_storage_and_ip"] == 4.725
     assert plan["resources"]["fallback"]["requires_new_plan_and_approval"]
     assert plan["medgemma_run_plan_sha256"] == "medgemma-plan"
+    assert plan["runtime"]["output_schema"] == "mri-finding-core-v1"
+    assert plan["runtime"]["prompt_sha256"] == "prompt"
+    assert plan["resources"]["server"]["name"] == "mristudy-study-test-medgemma"
 
 
 def test_scaleway_plan_requires_medgemma_and_evidence_digests(tmp_path: Path) -> None:
