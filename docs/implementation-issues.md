@@ -405,3 +405,41 @@ contains no patient identity, DICOM pixels, credentials, or clinical conclusions
   bisected or compared. Git was initialized. `.gitignore` did not exclude the source DICOM media,
   because DICOM instances are stored without a file extension; directory-level exclusions were added
   before the first commit and the staged-file policy check was run.
+
+## Evidence traceability and multi-region refactor
+
+- A completed medical run produced 29 findings across 26 windows in which every `traceable_evidence`
+  list was empty, while 25 findings carried an `image-NNNNNN` value in `finding_id`. The model had
+  placed the citation in the wrong field. Schema validation accepted it, because an empty evidence
+  list is structurally legal and `finding_id` had no format constraint, so the report was
+  structurally valid yet carried no visual traceability.
+- Findings are now graded `verified`, `recovered`, `cross_window` or `unverified`. Replayed against
+  the completed run, traceability rose from 0 to 79.31 percent: 23 citations recovered, all from
+  overlapping neighbour windows and labelled as such, 2 malformed identifiers such as `image-00035x`
+  correctly refused, and 6 findings retained as unverified. Recovery never invents an identifier.
+- Window overlap explains the cross-window citations: the recovered identifiers sit one to seven
+  slices before their window start, inside the eight-slice overlap. Overlap is real but is not
+  independent corroboration, so those citations are accepted and labelled rather than promoted.
+- Series merging reads only `traceable_evidence` and `counter_evidence`, so a repair applied after
+  integration would have been discarded. Integration now consumes the graded window results.
+- Grades are stored beside the clinical result, not inside it. The canonical schema sets
+  `additionalProperties: false`, so writing `evidence_status` into a finding made an otherwise valid
+  result fail validation and would have broken the locked artifacts.
+- A `finding_id` pattern was drafted for the schema and then withdrawn. Even adding a `description`
+  changed the decoder policy digest, which would have invalidated the approved plan and required a
+  new container for no functional gain. The constraint lives in the validator, where it cannot
+  affect constrained generation, and the rule is stated in the prompt.
+- `configs/profiles/knee-meniscus-v1.yaml` was never read by any code path: `load_yaml` had no
+  callers and `configs/` was not packaged. It had already drifted, listing status values the schema
+  rejects and series patterns that did not match the planner's literal substring markers. Profiles
+  are now validated, packaged and authoritative.
+- The schema loader was hard-coded to one filename, and `runner.py` bypassed it entirely by reading
+  the file by path. Both now resolve through the registry, keyed by the same `schema_version` that
+  travels through plans and provenance.
+- Integration was fused to the knee vocabulary through a 23-field claim key, a `(meniscus, segment)`
+  anatomy key and a `tear_status` classification pivot. These are now profile-declared paths.
+  Without a profile the knee tuples are used, and re-running integration over the completed run
+  reproduces the previous artifacts exactly.
+- The runtime pinned `output_schema` to a `Literal`, rejecting any other body region at request
+  parsing. It now reads the schema version from the mounted schema, which the provision plan already
+  binds.

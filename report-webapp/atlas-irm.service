@@ -1,0 +1,15 @@
+[Unit]
+Description=Private Atlas IRM report
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/openclaw/atlas-irm
+ExecStart=/usr/bin/python3 /home/openclaw/atlas-irm/server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

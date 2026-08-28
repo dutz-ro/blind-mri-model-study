@@ -25,5 +25,15 @@
 17. The 32-image and 32-DICOM synthetic probes must pass before medical access is authorized.
 18. Never treat overlapping window memberships as independent evidence. Preserve all window and
     evidence provenance through series and multiplanar integration.
+19. Never invent an evidence identifier. A citation may be recovered from `finding_id` only when
+    that identifier exists in the approved plan, and the repair must be recorded.
+20. Never discard a produced clinical finding because its evidence is weak. Keep it and label it
+    `unverified`. Traceability is reported, never used to fail a run.
+21. Never resolve an original acquisition UID unless explicitly asked. The UID map also holds the
+    de-identification secret and subject identifier, which must never be returned or logged.
+22. Change study behaviour through a profile in `configs/profiles`, not by hard-coding anatomy.
+    A profile is authoritative; do not restate the clinical vocabulary that belongs to the schema.
+23. Keep the canonical schema byte-identical unless the change is intended. Editing it alters the
+    approved decoder policy digest and invalidates the plan and its approval.
 
 The system is exploratory and non-diagnostic. Preserve model disagreement and uncertainty.

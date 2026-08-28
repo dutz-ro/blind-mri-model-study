@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Medical and study artifacts must remain outside Git.
+evidence/
+index.html
+tratament.html
+app.js
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+*-report.json
+*-report.html
+comparison.json
+reports/
+study-data/
+logs/
+secrets/
+.env
+.env.*

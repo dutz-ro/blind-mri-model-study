@@ -48,6 +48,50 @@ separate `original`, `anonymized-dicom`, `exports`, `manifests`, `runs`, `report
 `state` directories. The original source path is referenced, not copied, unless the operator
 copies it there explicitly.
 
+## Study Profiles
+
+A study profile decides the body region, which series are selected and under which role, the
+clinical schema, the windowing constraints, and how findings are grouped during integration.
+Everything else, including coverage, evidence identity, provenance and the safety boundaries, is
+invariant and lives in code.
+
+```bash
+./bin/mristudy init-study --input /absolute/path/to/dicom --profile knee-meniscus-v1
+```
+
+Shipped profiles:
+
+- `configs/profiles/knee-meniscus-v1.yaml` targets `knee-meniscus-finding-v2`.
+- `configs/profiles/brain-unknown-v1.yaml` targets `mri-finding-core-v1` and demonstrates a second
+  body region with unknown pathology.
+
+A new region needs a profile, not a code change. `mri-finding-core-v1` is anatomy-independent: its
+`observation_class` includes `unexpected_finding` and its `localization` carries free text, so an
+unanticipated finding can be reported instead of being forced into another organ vocabulary.
+
+## Evidence Traceability
+
+Findings are graded `verified`, `recovered`, `cross_window` or `unverified`. A citation the model
+misplaced into `finding_id` is recovered into the evidence list and recorded; an identifier absent
+from the approved plan is refused rather than invented. A finding that cannot be traced is kept and
+labelled, because losing a produced clinical result is worse than reporting it with a caveat.
+
+```bash
+./bin/mristudy evidence --study <id> --id image-000211
+./bin/mristudy evidence --study <id> --from-result <result.json> --export-images
+./bin/mristudy viewer-bundle --study <id>
+```
+
+`evidence` resolves an identifier to its anonymous UIDs, the de-identified instance on disk, that
+file digest, and the windows the slice belongs to. Resolving the original acquisition UID is opt-in
+because it re-identifies the study.
+
+## Private Report Viewer
+
+`report-webapp/` serves a local, Tailnet-only review page. `viewer-bundle` writes
+`reports/viewer/report-bundle.json` and the cited images in the shape the viewer consumes. Each
+model is presented independently and never merged into a shared verdict.
+
 ## Documentation
 
 - `docs/tutorials/01-install.md`
