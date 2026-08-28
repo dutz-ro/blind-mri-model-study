@@ -8,10 +8,18 @@ from ..errors import MRIStudyError
 from ..prompts import medgemma_json_suffix_v2
 from ..utils import atomic_json, canonical_json, load_json, sha256_bytes, sha256_file, utc_now
 from .evidence import ROLE_ORDER
+from .evidence_trace import (
+    aggregate_summaries,
+    coverage_warning,
+    grade_result_evidence,
+)
 from .integration import integrate_multiplanar, integrate_series, validate_integration_evidence
 from .integrity import require_complete_plan
 from .output_contract import classify_output
-from .validation import validate_window_result
+from .validation import evidence_traceability_warnings, validate_window_result
+
+# Traceability below this level is reported prominently but never blocks a run.
+MINIMUM_EVIDENCE_COVERAGE_PERCENT = 80.0
 
 
 class WindowInferenceClient(Protocol):
@@ -131,6 +139,8 @@ def validate_completed_window(
         manifest_path.name,
         *manifest.get("correction_artifacts", []),
     }
+    if manifest.get("evidence_trace_artifact"):
+        listed_artifacts.add(manifest["evidence_trace_artifact"])
     actual_artifacts = {
         path.name for path in raw_path.parent.glob(f"{window['window_id']}.*.json")
     }
@@ -183,6 +193,7 @@ def execute_window(
     plan_sha256: str,
     provision_plan_sha256: str,
     snapshot_manifest_sha256: str,
+    plan_evidence_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     raw_path = windows_dir / f"{window['window_id']}.raw.json"
     structured_path = windows_dir / f"{window['window_id']}.structured.json"
@@ -272,6 +283,31 @@ def execute_window(
         )
 
     atomic_json(structured_path, structured)
+
+    # Grade traceability after the result is accepted. The clinical content is
+    # already validated and is never discarded here: a finding that cannot be
+    # traced to an image is preserved and labelled, because losing a produced
+    # result is worse than reporting it with an explicit caveat.
+    graded, trace_actions, trace_summary = grade_result_evidence(
+        structured,
+        window["evidence_ids"],
+        plan_evidence_ids,
+    )
+    trace_warnings = evidence_traceability_warnings(structured, window["evidence_ids"])
+    trace_path = windows_dir / f"{window['window_id']}.evidence-trace.json"
+    atomic_json(
+        trace_path,
+        {
+            "window_id": window["window_id"],
+            "role": window["role"],
+            "summary": trace_summary,
+            "actions": trace_actions,
+            "warnings": trace_warnings,
+            "graded_result": graded,
+            "graded_at": utc_now(),
+        },
+    )
+
     manifest = _artifact_manifest(
         window,
         raw_path,
@@ -283,6 +319,11 @@ def execute_window(
         provision_plan_sha256,
         snapshot_manifest_sha256,
     )
+    manifest["evidence_trace_artifact"] = trace_path.name
+    manifest["evidence_summary"] = trace_summary
+    manifest["manifest_sha256"] = sha256_bytes(
+        canonical_json({key: value for key, value in manifest.items() if key != "manifest_sha256"})
+    )
     atomic_json(manifest_path, manifest)
     return {
         "window_id": window["window_id"],
@@ -291,6 +332,9 @@ def execute_window(
         "start_index": window["start_index"],
         "end_index": window["end_index"],
         "result": structured,
+        "graded_result": graded,
+        "evidence_summary": trace_summary,
+        "evidence_warnings": trace_warnings,
         "manifest": manifest,
     }
 
@@ -325,6 +369,12 @@ def run_window_plan(
     for path in (windows_dir, series_dir, integration_dir):
         path.mkdir(exist_ok=True, mode=0o700)
 
+    # The union across the arm lets a citation be distinguished as a real slice
+    # from an overlapping window rather than an identifier that exists nowhere.
+    plan_evidence_ids: set[str] = set()
+    for item in plan["windows"]:
+        plan_evidence_ids |= set(item["evidence_ids"])
+
     window_results = []
     for window in plan["windows"]:
         window_prompt = (
@@ -347,6 +397,7 @@ def run_window_plan(
                 plan["plan_sha256"],
                 provision_plan_sha256,
                 snapshot_manifest_sha256,
+                plan_evidence_ids,
             )
         )
 
@@ -408,6 +459,39 @@ def run_window_plan(
         "multiplanar_provenance": "integration/multiplanar.provenance.json",
         "completed_at": utc_now(),
     }
+
+    # Traceability is reported, never used to fail the run. Slice coverage is a
+    # hard gate because it is a property of the plan; evidence coverage is a
+    # property of what the model chose to cite, so it is surfaced as a warning
+    # and the findings are retained either way.
+    evidence_overall = aggregate_summaries(
+        [item["evidence_summary"] for item in window_results if item.get("evidence_summary")]
+    )
+    graded_windows = [
+        {
+            "window_id": item["window_id"],
+            "role": item["role"],
+            "summary": item.get("evidence_summary"),
+            "warnings": item.get("evidence_warnings") or [],
+        }
+        for item in window_results
+    ]
+    atomic_json(
+        integration_dir / "evidence-traceability.json",
+        {
+            "overall": evidence_overall,
+            "windows": graded_windows,
+            "minimum_expected_percent": MINIMUM_EVIDENCE_COVERAGE_PERCENT,
+            "warning": coverage_warning(evidence_overall, MINIMUM_EVIDENCE_COVERAGE_PERCENT),
+            "created_at": utc_now(),
+        },
+    )
+    final["evidence_traceability"] = evidence_overall
+    final["evidence_traceability_artifact"] = "integration/evidence-traceability.json"
+    warning = coverage_warning(evidence_overall, MINIMUM_EVIDENCE_COVERAGE_PERCENT)
+    if warning:
+        final["evidence_traceability_warning"] = warning
+
     if final["coverage"]["coverage_percent"] != 100.0:
         raise MRIStudyError("Coverage below 100%; final result cannot be locked.")
     atomic_json(run_dir / "final.json", final)

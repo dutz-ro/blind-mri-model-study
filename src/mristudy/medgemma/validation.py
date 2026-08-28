@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..clinical_schema import validate_knee_meniscus_result
+from .evidence_trace import is_evidence_id
 
 
 def validate_window_request(payload: dict[str, Any], approved_window: dict[str, Any]) -> list[str]:
@@ -34,6 +35,50 @@ def validate_window_request(payload: dict[str, Any], approved_window: dict[str, 
     if payload.get("prompt_sha256") != approved_window.get("prompt_sha256"):
         errors.append("prompt SHA-256 differs from approved window")
     return errors
+
+
+def evidence_traceability_warnings(
+    result: dict[str, Any],
+    allowed_evidence_ids: list[str],
+) -> list[str]:
+    """Report weak traceability without rejecting the clinical content.
+
+    A completed run produced findings whose image citation was placed in
+    ``finding_id`` while ``traceable_evidence`` stayed empty. Schema validation
+    accepted that, because an empty evidence list is structurally legal, so the
+    report was valid yet visually untraceable.
+
+    These conditions are returned as warnings rather than errors on purpose:
+    discarding a produced clinical result is worse than surfacing it with an
+    explicit caveat. The runner records them and grades every finding, so the
+    weakness is visible instead of silent.
+    """
+    warnings: list[str] = []
+    if not isinstance(result, dict):
+        return warnings
+    allowed = set(allowed_evidence_ids)
+    for finding in result.get("findings") or []:
+        if not isinstance(finding, dict):
+            continue
+        identifier = finding.get("finding_id")
+        cited = [
+            evidence.get("export_id")
+            for key in ("traceable_evidence", "counter_evidence")
+            for evidence in finding.get(key) or []
+            if isinstance(evidence, dict)
+        ]
+        if is_evidence_id(identifier):
+            warnings.append(
+                "finding_id is an image evidence identifier; image citations belong in "
+                f"traceable_evidence: {identifier}"
+            )
+        if not cited:
+            warnings.append(f"finding has no image citation: {identifier}")
+        elif not set(cited) & allowed:
+            warnings.append(
+                f"finding cites no evidence from its own window: {identifier}"
+            )
+    return warnings
 
 
 def validate_window_result(result: dict[str, Any], allowed_evidence_ids: list[str]) -> list[str]:

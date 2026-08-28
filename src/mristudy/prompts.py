@@ -41,7 +41,16 @@ markdown, headings, or repeated normal statements. Use an empty findings array w
 meniscal finding is supported; do not enumerate every normal slice or repeat an absent finding.
 For a focal finding, preserve uncertainty and cite only supplied image-NNNNNN evidence IDs.
 The vascular zone is only an anatomical estimate. Never recommend treatment, determine
-repairability, or claim directly observed vascularity."""
+repairability, or claim directly observed vascularity.
+
+Evidence citation rule. Every finding must cite the images it is based on inside
+traceable_evidence, as objects of the form
+{"export_id": "image-NNNNNN", "role": "supporting", "description": "..."}.
+Use counter_evidence with role "counter" for images that argue against the finding.
+Cite only image IDs supplied with this window, exactly as given.
+finding_id is a label for the finding itself, such as "window-0010-01".
+Never put an image ID in finding_id: a finding whose images are not cited in
+traceable_evidence cannot be traced back to the scan and is treated as unverified."""
 
 
 def medgemma_json_suffix_v2() -> str:
