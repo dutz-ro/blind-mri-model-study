@@ -39,7 +39,7 @@ from .provenance import append_event
 from .report_bundle import build_viewer_bundle, load_locked_model_results
 from .reports import render_json_report
 from .state import NEXT_ACTION, Stage, StudyState
-from .utils import atomic_json, load_json
+from .utils import atomic_json, canonical_json, load_json, sha256_bytes
 from .workflow import run_export, run_local_until_privacy
 
 app = typer.Typer(no_args_is_help=True, help="Privacy-gated blind MRI model study pipeline.")
@@ -521,8 +521,14 @@ def supplement_models_run(
 def cloud_plan(study_id: Annotated[str, typer.Option("--study")]) -> None:
     settings = _settings()
     paths, state = _paths_and_state(study_id)
-    if state.stage != Stage.GENERALIST_RESULTS_LOCKED:
+    if state.stage not in {Stage.GENERALIST_RESULTS_LOCKED, Stage.CLOUD_PLAN_READY}:
         raise MRIStudyError("Cloud planning follows locked generalist results.")
+    if state.stage == Stage.CLOUD_PLAN_READY and (
+        (paths.state / "cloud-upload.approval.json").exists()
+        or (paths.state / "backend-plan-migration.approval.json").exists()
+        or (paths.state / "backend-egress.approval.json").exists()
+    ):
+        raise MRIStudyError("Approved cloud/backend plans cannot be regenerated.")
     required = (
         settings.google_project,
         settings.google_dataset,
@@ -539,6 +545,12 @@ def cloud_plan(study_id: Annotated[str, typer.Option("--study")]) -> None:
     uploadable, skipped = discover_uploadable_images(paths.anonymized)
     plan = stow_plan(uploadable, store)
     plan["skipped"] = skipped
+    # `skipped` is part of the persisted operation plan. Recompute the digest
+    # after adding it so later migration and approval checks bind the exact
+    # object on disk rather than the pre-enrichment version.
+    plan["plan_sha256"] = sha256_bytes(
+        canonical_json({key: value for key, value in plan.items() if key != "plan_sha256"})
+    )
     atomic_json(paths.state / "cloud-upload-plan.json", plan)
     infrastructure = infrastructure_plan(
         project=settings.google_project or "",
@@ -550,7 +562,8 @@ def cloud_plan(study_id: Annotated[str, typer.Option("--study")]) -> None:
         global_gpu_quota=0.0,
     )
     atomic_json(paths.state / "cloud-infrastructure-plan.json", infrastructure)
-    state.advance(Stage.CLOUD_PLAN_READY)
+    if state.stage == Stage.GENERALIST_RESULTS_LOCKED:
+        state.advance(Stage.CLOUD_PLAN_READY)
     typer.echo(
         json.dumps(
             {

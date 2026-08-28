@@ -8,6 +8,7 @@ from mristudy.cloud.dicomweb import DicomStoreRef, DicomWebClient
 from mristudy.cloud.medgemma import build_dicom_request, series_url
 from mristudy.cloud.plans import discover_uploadable_images, infrastructure_plan, stow_plan
 from mristudy.models.litellm import LiteLLMClient
+from mristudy.utils import canonical_json, sha256_bytes
 
 
 class Token:
@@ -90,6 +91,13 @@ def test_cloud_plan_excludes_non_image_dicom(tmp_path) -> None:
 
     store = DicomStoreRef("project", "europe-west4", "dataset", "store")
     upload = stow_plan(images, store)
+    upload["skipped"] = skipped
+    upload["plan_sha256"] = sha256_bytes(
+        canonical_json({key: value for key, value in upload.items() if key != "plan_sha256"})
+    )
+    assert upload["plan_sha256"] == sha256_bytes(
+        canonical_json({key: value for key, value in upload.items() if key != "plan_sha256"})
+    )
     plan = infrastructure_plan(
         project="project",
         region="europe-west4",
