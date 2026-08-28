@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -23,18 +24,36 @@ class LiteLLMClient:
         return headers
 
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        try:
-            response = httpx.request(
-                method,
-                f"{self.base_url}{path}",
-                headers=self._headers(),
-                timeout=self.timeout,
-                **kwargs,
-            )
-            response.raise_for_status()
-            return response
-        except httpx.HTTPError as error:
-            raise MRIStudyError(f"LiteLLM request failed: {type(error).__name__}") from error
+        retry_delays = (0, 15, 30, 60, 120)
+        last_error: httpx.HTTPError | None = None
+        attempts = 0
+        for attempt, delay in enumerate(retry_delays):
+            attempts += 1
+            if delay:
+                time.sleep(delay)
+            try:
+                response = httpx.request(
+                    method,
+                    f"{self.base_url}{path}",
+                    headers=self._headers(),
+                    timeout=self.timeout,
+                    **kwargs,
+                )
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as error:
+                last_error = error
+                if error.response.status_code not in {429, 502, 503, 504}:
+                    break
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as error:
+                last_error = error
+            if attempt == len(retry_delays) - 1:
+                break
+        assert last_error is not None
+        raise MRIStudyError(
+            f"LiteLLM request failed after {attempts} attempts: "
+            f"{type(last_error).__name__}"
+        ) from last_error
 
     def models(self) -> list[dict]:
         payload = self._request("GET", "/v1/models").json()

@@ -116,7 +116,13 @@ def run_generalists(
 
                 with output.open(encoding="utf-8") as handle:
                     raw = json.load(handle)
-                parse_structured_model_result(raw)
+                with structured_output.open(encoding="utf-8") as handle:
+                    structured = json.load(handle)
+                parse_structured_model_result(structured)
+                corrections = sorted(
+                    arm_dir.glob(f"{batch['batch_id']}.correction-*.json")
+                )
+                response_source = corrections[-1] if corrections else output
                 structured_path = structured_output.name
             elif resume and output.exists() and not structured_output.exists():
                 import json

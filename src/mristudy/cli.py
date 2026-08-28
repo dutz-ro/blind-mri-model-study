@@ -385,7 +385,10 @@ def select_models_input(study_id: Annotated[str, typer.Option("--study")]) -> No
 
 
 @models_app.command("run")
-def run_models(study_id: Annotated[str, typer.Option("--study")]) -> None:
+def run_models(
+    study_id: Annotated[str, typer.Option("--study")],
+    resume_run_id: Annotated[str | None, typer.Option("--resume-run-id")] = None,
+) -> None:
     settings = _settings()
     paths, state = _paths_and_state(study_id)
     if state.stage != Stage.PROVIDER_EGRESS_APPROVED:
@@ -404,13 +407,19 @@ def run_models(study_id: Annotated[str, typer.Option("--study")]) -> None:
         plan.get("required_upstream_host", "api.routera.one"),
     )
     atomic_json(paths.manifests / "provider-upstream-verification.json", upstreams)
-    run_id = f"generalists-{uuid.uuid4().hex[:12]}"
+    run_id = resume_run_id or f"generalists-{uuid.uuid4().hex[:12]}"
+    if not run_id.startswith("generalists-"):
+        raise MRIStudyError("Invalid generalist run ID.")
+    run_dir = paths.runs / run_id
+    if resume_run_id and not run_dir.is_dir():
+        raise MRIStudyError("Generalist run directory does not exist.")
     summary = run_generalists(
         client,
         paths.exports,
         load_json(paths.manifests / "exports.json"),
         plan,
-        paths.runs / run_id,
+        run_dir,
+        resume=bool(resume_run_id),
     )
     atomic_json(paths.manifests / "generalist-results-lock.json", summary)
     state.advance(Stage.GENERALIST_RESULTS_LOCKED)
