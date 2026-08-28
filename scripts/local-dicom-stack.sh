@@ -22,6 +22,13 @@ if [ ! -s "$ENV_FILE" ]; then
     printf 'MRI_STUDY_ORTHANC_PASSWORD=%s\n' "$orthanc_password"
     printf 'MRI_STUDY_POSTGRES_PASSWORD=%s\n' "$postgres_password"
     printf 'MRI_STUDY_ORTHANC_BASIC_AUTH=%s\n' "$(printf 'mristudy:%s' "$orthanc_password" | base64 -w0)"
+    # Keep this stack outside Docker's commonly allocated 172.16/12 space.
+    # Every value remains configurable for hosts that already route 10.253.50/24.
+    printf 'MRI_STUDY_DICOM_SUBNET=10.253.50.0/24\n'
+    printf 'MRI_STUDY_POSTGRES_IP=10.253.50.10\n'
+    printf 'MRI_STUDY_ORTHANC_IP=10.253.50.11\n'
+    printf 'MRI_STUDY_OHIF_IP=10.253.50.12\n'
+    printf 'MRI_STUDY_GATEWAY_IP=10.253.50.13\n'
   } > "$ENV_FILE"
 fi
 
