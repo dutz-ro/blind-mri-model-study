@@ -20,6 +20,11 @@ from .config import Settings
 from .dicom.fixtures import create_synthetic_mri
 from .dicom.inventory import inventory
 from .errors import MRIStudyError
+from .medgemma.evidence_locate import (
+    collect_cited_evidence_ids,
+    export_evidence_images,
+    locate_many,
+)
 from .models.litellm import LiteLLMClient
 from .models.runs import (
     provider_plan,
@@ -703,6 +708,72 @@ def report(study_id: Annotated[str, typer.Option("--study")]) -> None:
     )
     state.advance(Stage.REPORT_COMPLETE)
     typer.echo(json.dumps({"stage": state.stage.value, "report": "final-report.html"}, indent=2))
+
+
+@app.command("evidence")
+def evidence(
+    study_id: Annotated[str, typer.Option("--study")],
+    evidence_id: Annotated[str | None, typer.Option("--id")] = None,
+    from_result: Annotated[
+        Path | None, typer.Option("--from-result", help="Locate every evidence ID a result cites.")
+    ] = None,
+    export_images: Annotated[bool, typer.Option("--export-images")] = False,
+    include_original: Annotated[
+        bool,
+        typer.Option(
+            "--include-original",
+            help="Resolve the original SOP Instance UID. This re-identifies the study.",
+        ),
+    ] = False,
+) -> None:
+    """Resolve evidence identifiers to checkable images.
+
+    A finding is only useful if the underlying image can be put in front of a
+    clinician, so this returns the anonymous UIDs, the de-identified file, its
+    digest, and the windows the slice belongs to.
+    """
+    paths, _ = _paths_and_state(study_id)
+    manifest_path = paths.manifests / "medgemma-evidence-map.json"
+    if not manifest_path.exists():
+        raise MRIStudyError("This study has no MedGemma evidence map.")
+    evidence_manifest = load_json(manifest_path)
+    plan_path = paths.state / "medgemma-run-plan.json"
+    run_plan = load_json(plan_path) if plan_path.exists() else None
+
+    if evidence_id and from_result:
+        raise MRIStudyError("Use either --id or --from-result, not both.")
+    if from_result:
+        requested = collect_cited_evidence_ids(load_json(from_result))
+        if not requested:
+            raise MRIStudyError("That result cites no evidence identifiers.")
+    elif evidence_id:
+        requested = [evidence_id]
+    else:
+        raise MRIStudyError("Provide --id or --from-result.")
+
+    references = locate_many(
+        requested,
+        evidence_manifest,
+        paths.anonymized,
+        run_plan=run_plan,
+        uid_map_path=paths.state / "uid-map.json" if include_original else None,
+        include_original_reference=include_original,
+    )
+    if export_images:
+        references = export_evidence_images(references, paths.reports / "evidence")
+
+    atomic_json(paths.reports / "evidence-references.json", {"references": references})
+    typer.echo(
+        json.dumps(
+            {
+                "requested": len(requested),
+                "located": sum(1 for item in references if item.get("anonymised_path")),
+                "images_exported": sum(1 for item in references if item.get("image_file")),
+                "manifest": "reports/evidence-references.json",
+            },
+            indent=2,
+        )
+    )
 
 
 def run_cli() -> None:
