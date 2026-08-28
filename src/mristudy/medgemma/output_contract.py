@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 EXTRACTION_POLICY = "medgemma-json-extraction-v2"
 NORMALIZATION_POLICY = "medgemma-normalization-v2"
 OUTPUT_VALIDATION_POLICY = "medgemma-output-validation-v2"
+CORRECTION_POLICY = "medgemma-structural-correction-v2"
 MAX_OUTPUT_CHARACTERS = 1_000_000
 MAX_JSON_DEPTH = 128
 DECODER_POLICY = "medgemma-lmfe-decoder-v1"
@@ -103,11 +104,39 @@ def output_contract() -> dict[str, Any]:
         "extraction": EXTRACTION_POLICY,
         "normalization": NORMALIZATION_POLICY,
         "validation": OUTPUT_VALIDATION_POLICY,
+        "correction": CORRECTION_POLICY,
     }
     return {
         **payload,
         "policy_sha256": policy_digest(OUTPUT_VALIDATION_POLICY, payload),
     }
+
+
+def structural_correction_prompt(
+    previous: str,
+    attempt: int,
+    errors: list[str],
+) -> str:
+    """Build a compact, text-only repair prompt for an accepted schema contract.
+
+    The previous implementation appended the entire JSON Schema to every
+    correction. With a partial model response this consumed most of the model
+    context and three real corrections terminated around 1,000 tokens without
+    EOS or a closing brace. The constrained decoder already enforces the schema,
+    so repeating it is both redundant and harmful.
+    """
+    return (
+        "Structural correction only. Do not inspect or reinterpret images. "
+        "Return exactly one complete JSON object and no prose. Preserve every clinical "
+        "claim, uncertainty, evidence reference, and counter-evidence already present. "
+        "Do not add a clinical finding or change a measurement. If the previous response "
+        "was truncated, complete only its JSON structure and required fields, using "
+        "indeterminate, null, low, empty arrays, or false safety constants when a required "
+        "value was not present. The constrained decoder enforces the approved schema. "
+        f"Correction attempt {attempt}. Errors: {'; '.join(errors)[:1500]}\n"
+        "Previous response to preserve semantically:\n"
+        + previous[:12000]
+    )
 
 
 def structural_correction_errors(decision: ExtractionDecision) -> list[str]:
@@ -563,7 +592,11 @@ def classify_output(
             valid.append((index, candidate, normalized, decision))
     semantic_digests = {item[3].semantic_sha256 for item in valid}
     if not valid:
-        status = "unrecoverable"
+        status = (
+            "truncated_json"
+            if text.lstrip().startswith("{") and not candidates
+            else "unrecoverable"
+        )
         selected = None
     elif len(semantic_digests) > 1:
         status = "ambiguous_multiple_valid_results"

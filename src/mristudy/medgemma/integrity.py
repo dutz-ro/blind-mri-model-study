@@ -132,6 +132,7 @@ def require_complete_plan(plan: dict[str, Any]) -> None:
             "repetition_penalty": 1.05,
             "no_repeat_ngram_size": 8,
             "json_schema_enforced": True,
+            "canonical_eos_only": True,
         }:
             raise MRIStudyError("MedGemma generation policy differs from approved contract.")
         if window.get("decoder") != expected_decoder:

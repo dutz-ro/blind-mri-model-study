@@ -16,7 +16,7 @@ import jsonschema
 import numpy as np
 import pydicom
 import torch
-from contracts import validate_window_payload
+from contracts import canonical_eos_guard, validate_window_payload
 from fastapi import FastAPI, HTTPException
 from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
 from lmformatenforcer.integrations.transformers import (
@@ -31,6 +31,7 @@ from output_contract import (
     decoder_schema,
     output_contract,
     structural_correction_errors,
+    structural_correction_prompt,
 )
 from PIL import Image
 from pydantic import BaseModel
@@ -257,21 +258,8 @@ def _validate_window_request(request: AnalyzeWindowRequest, approved: dict) -> N
 
 
 def _correction_prompt(base_prompt: str, attempt: int, errors: list[str], previous: str) -> str:
-    return (
-        "Structural correction only. Do not inspect or reinterpret the images. "
-        "Rewrite the previous "
-        "response as exactly one JSON object matching the required schema. Preserve every clinical "
-        "claim, uncertainty, evidence reference, and counter-evidence. "
-        "Do not add or remove findings. "
-        "Correct only missing fields, object structure, and allowed enum aliases. Attempt "
-        + str(attempt)
-        + ". Validation errors: "
-        + "; ".join(errors)[:1500]
-        + "\nPrevious response to preserve semantically:\n"
-        + previous[:12000]
-        + "\n\n"
-        + base_prompt.rsplit("Return JSON now.", maxsplit=1)[-1]
-    )
+    del base_prompt
+    return structural_correction_prompt(previous, attempt, errors)
 
 
 def _require_probe_authorization(plan: dict) -> None:
@@ -377,13 +365,25 @@ def _schema_prefix_allowed_tokens_fn():
             "Installed constrained-decoder version differs from the approved version."
         )
     _decoder_metadata = decoder_contract(schema)
-    return build_transformers_prefix_allowed_tokens_fn(
+    base_callback = build_transformers_prefix_allowed_tokens_fn(
         _tokenizer_data,
         JsonSchemaParser(
             constrained_schema,
             config=CharacterLevelParserConfig(**DECODER_CONFIG),
         ),
     )
+    tokenizer_eos = model_pipeline.tokenizer.eos_token_id
+    if not isinstance(tokenizer_eos, int):
+        raise RuntimeError("Tokenizer must provide one canonical EOS token ID.")
+    configured_eos = model_pipeline.model.generation_config.eos_token_id
+    return canonical_eos_guard(base_callback, tokenizer_eos, configured_eos)
+
+
+def _canonical_eos_token_id() -> int:
+    eos_token_id = _model_pipeline().tokenizer.eos_token_id
+    if not isinstance(eos_token_id, int):
+        raise RuntimeError("Tokenizer must provide one canonical EOS token ID.")
+    return eos_token_id
 
 
 def _generated_text(output: object) -> str:
@@ -583,6 +583,7 @@ def synthetic_json_probe(request: SyntheticJsonProbeRequest) -> dict:
             generate_kwargs={
                 "max_new_tokens": 512,
                 "do_sample": False,
+                "eos_token_id": _canonical_eos_token_id(),
                 "prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn(),
             },
         )
@@ -662,6 +663,7 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
                     "do_sample": request.generation["do_sample"],
                     "repetition_penalty": request.generation["repetition_penalty"],
                     "no_repeat_ngram_size": request.generation["no_repeat_ngram_size"],
+                    "eos_token_id": _canonical_eos_token_id(),
                     "prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn(),
                 },
             )

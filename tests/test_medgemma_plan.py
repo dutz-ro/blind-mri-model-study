@@ -91,6 +91,7 @@ def test_full_plan_has_617_unique_slices_and_26_windows(tmp_path: Path) -> None:
             "repetition_penalty": 1.05,
             "no_repeat_ngram_size": 8,
             "json_schema_enforced": True,
+            "canonical_eos_only": True,
         }
         for window in plan["windows"]
     )

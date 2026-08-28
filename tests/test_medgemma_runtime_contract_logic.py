@@ -39,12 +39,31 @@ def approved() -> dict:
             "repetition_penalty": 1.05,
             "no_repeat_ngram_size": 8,
             "json_schema_enforced": True,
+            "canonical_eos_only": True,
         },
         "decoder": OUTPUT_MODULE.decoder_contract(
             __import__("mristudy.clinical_schema", fromlist=["load_knee_meniscus_schema"])
             .load_knee_meniscus_schema()
         ),
+        "output_contract": OUTPUT_MODULE.output_contract(),
     }
+
+
+def test_canonical_eos_guard_blocks_alternate_stop_without_adding_eos() -> None:
+    def base(_batch_id, sent):
+        return [7, 106] if len(sent) == 1 else [1, 7, 106]
+
+    guarded = CONTRACTS.canonical_eos_guard(base, 1, [1, 106])
+    assert guarded(0, [9]) == [7]
+    assert guarded(0, [9, 7]) == [1, 7]
+
+
+def test_canonical_eos_guard_fails_if_only_alternate_stop_is_allowed() -> None:
+    guarded = CONTRACTS.canonical_eos_guard(lambda _batch, _sent: [106], 1, [1, 106])
+    import pytest
+
+    with pytest.raises(ValueError, match="removed every allowed token"):
+        guarded(0, [9])
 
 
 def test_runtime_contract_accepts_exact_window() -> None:

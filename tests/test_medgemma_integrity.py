@@ -42,6 +42,7 @@ def complete_plan() -> dict:
                     "repetition_penalty": 1.05,
                     "no_repeat_ngram_size": 8,
                     "json_schema_enforced": True,
+                    "canonical_eos_only": True,
                 },
                 "decoder": decoder,
                 "start_index": 0,

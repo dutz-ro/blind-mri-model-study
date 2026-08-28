@@ -9,6 +9,7 @@ from ..errors import MRIStudyError
 from ..utils import atomic_json, canonical_json, load_json, sha256_bytes, sha256_file, utc_now
 from .evidence_trace import project_result_evidence, verify_evidence_projection
 from .output_contract import (
+    CORRECTION_POLICY,
     EXTRACTION_POLICY,
     NORMALIZATION_POLICY,
     OUTPUT_VALIDATION_POLICY,
@@ -88,6 +89,7 @@ def replay_historical_runs(
         "attempts": sum(len(record["attempts"]) for record in records),
         "classifications": dict(sorted(counts.items())),
         "policies": {
+            "correction": CORRECTION_POLICY,
             "extraction": EXTRACTION_POLICY,
             "normalization": NORMALIZATION_POLICY,
             "validation": OUTPUT_VALIDATION_POLICY,

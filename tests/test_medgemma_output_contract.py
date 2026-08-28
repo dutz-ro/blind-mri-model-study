@@ -8,12 +8,14 @@ import pytest
 
 from mristudy.clinical_schema import load_knee_meniscus_schema
 from mristudy.medgemma.output_contract import (
+    CORRECTION_POLICY,
     classify_output,
     decoder_schema,
     enumerate_json_candidates,
     normalize_structural_result,
     strict_json_loads,
     structural_correction_errors,
+    structural_correction_prompt,
     verify_normalization,
 )
 from tests.test_clinical_schema import valid_result
@@ -122,6 +124,28 @@ def test_malformed_explicit_evidence_remains_canonically_invalid() -> None:
     assert decision.status == "unrecoverable"
     assert decision.result is None
     assert structural_correction_errors(decision)
+
+
+def test_incomplete_json_is_classified_as_truncated() -> None:
+    decision = classify_output(
+        '{"schema_version":"knee-meniscus-finding-v2","findings":[',
+        load_knee_meniscus_schema(),
+    )
+    assert decision.status == "truncated_json"
+    assert decision.result is None
+    assert structural_correction_errors(decision) == ["truncated_json"]
+
+
+def test_structural_correction_prompt_is_compact_and_does_not_repeat_schema() -> None:
+    previous = '{"schema_version":"knee-meniscus-finding-v2","findings":['
+    prompt = structural_correction_prompt(previous, 1, ["truncated_json"])
+    assert previous in prompt
+    assert "truncated_json" in prompt
+    assert "Required JSON Schema" not in prompt
+    assert '"$defs"' not in prompt
+    assert "Do not inspect or reinterpret images" in prompt
+    assert "Do not add a clinical finding" in prompt
+    assert CORRECTION_POLICY == "medgemma-structural-correction-v2"
 
 
 def test_normalization_is_idempotent_audited_and_does_not_mutate_source() -> None:

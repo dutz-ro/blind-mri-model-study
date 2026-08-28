@@ -47,6 +47,8 @@ def test_runtime_pins_schema_and_supports_offline_model_snapshot() -> None:
     assert '"decoder": _decoder_identity()' in source
     assert "def _decoder_identity()" in source
     assert "schema_errors = structural_correction_errors(decision)" in source
+    assert "return structural_correction_prompt(previous, attempt, errors)" in source
+    assert 'base_prompt.rsplit("Return JSON now."' not in source
     assert 'maximum_corrections = int(approved["maximum_structural_corrections"])' in source
     assert "for attempt in range(1 + maximum_corrections)" in source
     assert "if attempt < maximum_corrections" in source
@@ -118,6 +120,9 @@ def test_medical_output_contract_is_placed_after_images() -> None:
     assert '"repetition_penalty": request.generation["repetition_penalty"]' in source
     assert '"no_repeat_ngram_size": request.generation["no_repeat_ngram_size"]' in source
     assert '"prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn()' in source
+    assert '"eos_token_id": _canonical_eos_token_id()' in source
+    assert source.count('"eos_token_id": _canonical_eos_token_id()') == 2
+    assert "return canonical_eos_guard(base_callback, tokenizer_eos, configured_eos)" in source
     assert "generate_kwargs={" in source
     assert "JsonSchemaParser(" in source
     assert "constrained_schema," in source
@@ -126,7 +131,7 @@ def test_medical_output_contract_is_placed_after_images() -> None:
     assert "Constrained decoder allowed a non-JSON prefix" in source
     assert '"starts_with_json_object": raw_text.lstrip().startswith("{")' in source
     assert '"generation": request.generation' in source
-    assert "Do not inspect or reinterpret the images" in source
+    assert "return structural_correction_prompt(previous, attempt, errors)" in source
     assert 'else:\n                content = [{"type": "text", "text": prompt}]' in source
 
 
