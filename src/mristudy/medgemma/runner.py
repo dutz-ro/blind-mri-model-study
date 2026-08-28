@@ -408,10 +408,18 @@ def run_window_plan(
         if not role_windows:
             raise MRIStudyError(f"No completed windows for required role: {role}")
         series_uid = role_windows[0]["series_uid"]
+        # Integrate the graded results so a citation recovered from finding_id
+        # survives into the series and multiplanar output. Merging reads only
+        # traceable_evidence and counter_evidence, so a repair applied after
+        # this point would be silently discarded.
+        integration_input = [
+            {**item, "result": item.get("graded_result") or item["result"]}
+            for item in role_windows
+        ]
         result, provenance = integrate_series(
             role,
             series_uid,
-            role_windows,
+            integration_input,
             evidence_map=evidence_map,
         )
         if evidence_map is not None:

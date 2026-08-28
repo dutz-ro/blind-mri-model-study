@@ -36,6 +36,7 @@ from .models.selection import select_generalist_exports
 from .paths import StudyPaths, study_paths
 from .prompts import knee_meniscus_prompt_v2
 from .provenance import append_event
+from .report_bundle import build_viewer_bundle, load_locked_model_results
 from .reports import render_json_report
 from .state import NEXT_ACTION, Stage, StudyState
 from .utils import atomic_json, load_json
@@ -770,6 +771,47 @@ def evidence(
                 "located": sum(1 for item in references if item.get("anonymised_path")),
                 "images_exported": sum(1 for item in references if item.get("image_file")),
                 "manifest": "reports/evidence-references.json",
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command("viewer-bundle")
+def viewer_bundle(
+    study_id: Annotated[str, typer.Option("--study")],
+    skip_images: Annotated[bool, typer.Option("--skip-images")] = False,
+) -> None:
+    """Build the local bundle consumed by the private report viewer.
+
+    Each model is emitted independently with its own findings and cited images,
+    never merged into a shared verdict. Findings without usable image evidence
+    are included and labelled rather than dropped.
+    """
+    paths, _ = _paths_and_state(study_id)
+    manifest_path = paths.manifests / "medgemma-evidence-map.json"
+    if not manifest_path.exists():
+        raise MRIStudyError("This study has no MedGemma evidence map.")
+    model_results = load_locked_model_results(paths.manifests, paths.runs)
+    if not model_results:
+        raise MRIStudyError("No locked structured model result was found.")
+    plan_path = paths.state / "medgemma-run-plan.json"
+    bundle = build_viewer_bundle(
+        model_results,
+        load_json(manifest_path),
+        paths.anonymized,
+        paths.reports / "viewer",
+        run_plan=load_json(plan_path) if plan_path.exists() else None,
+        export_images=not skip_images,
+    )
+    atomic_json(paths.reports / "viewer" / "report-bundle.json", bundle)
+    typer.echo(
+        json.dumps(
+            {
+                "models": [item["model"] for item in bundle["models"]],
+                "findings": sum(len(item["findings"]) for item in bundle["models"]),
+                "bundle": "reports/viewer/report-bundle.json",
+                "images": "reports/viewer/evidence",
             },
             indent=2,
         )

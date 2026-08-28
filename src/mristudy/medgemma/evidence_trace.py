@@ -185,11 +185,10 @@ def grade_result_evidence(
 
     findings = graded.get("findings")
     if not isinstance(findings, list):
-        summary = _summary([], window_ids)
-        graded["evidence_summary"] = summary
-        return graded, actions, summary
+        return graded, actions, _summary([], window_ids)
 
     statuses: list[str] = []
+    grades: list[dict[str, Any]] = []
     for index, finding in enumerate(findings):
         if not isinstance(finding, dict):
             continue
@@ -202,23 +201,40 @@ def grade_result_evidence(
             status = STATUS_VERIFIED
             for export_id in cited:
                 status = _weaker(status, classify_evidence_id(export_id, window_ids, plan_ids))
-        previous = finding.get("evidence_status")
-        finding["evidence_status"] = status
-        if previous != status:
-            _action(
-                actions,
-                "evidence-status-graded-v1",
-                f"findings.{index}.evidence_status",
-                "graded",
-                previous,
-                status,
-                {"cited": cited},
-            )
+        _action(
+            actions,
+            "evidence-status-graded-v1",
+            f"findings.{index}",
+            "graded",
+            None,
+            status,
+            {"cited": cited},
+        )
+        # The grade is kept beside the result, not inside the finding: the
+        # canonical schema sets additionalProperties false, so an extra field
+        # would make an otherwise valid clinical result fail validation.
+        grades.append(
+            {
+                "index": index,
+                "finding_id": finding.get("finding_id"),
+                "evidence_status": status,
+                "cited": cited,
+            }
+        )
         statuses.append(status)
 
     summary = _summary(statuses, window_ids)
-    graded["evidence_summary"] = summary
+    summary["findings"] = grades
     return graded, actions, summary
+
+
+def status_by_finding_id(summary: dict[str, Any]) -> dict[str, str]:
+    """Map finding identifiers to their traceability grade."""
+    return {
+        str(item.get("finding_id")): str(item.get("evidence_status"))
+        for item in summary.get("findings") or []
+        if item.get("finding_id") is not None
+    }
 
 
 def _summary(statuses: list[str], window_ids: set[str]) -> dict[str, Any]:
