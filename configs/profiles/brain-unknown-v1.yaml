@@ -1,0 +1,69 @@
+# Brain MRI with unknown pathology.
+#
+# Demonstrates that a different body region needs a profile, not code changes.
+# It uses the anatomy-independent core schema, whose observation_class is
+# deliberately broad so an unanticipated finding can be reported instead of
+# being forced into a vocabulary built for another organ.
+profile_schema_version: 1
+
+name: brain-unknown-v1
+body_region: brain
+task: exploratory-unknown-pathology-review
+output_schema: mri-finding-core-v1
+
+series_roles:
+  - role: primary-volume
+    pattern: "(?i)(3d)?.*t1.*(mprage|bravo|tfe)?"
+  - role: fluid-sensitive
+    pattern: "(?i)(flair|t2.*flair)"
+  - role: t2-axial
+    pattern: "(?i)ax.*t2"
+  - role: diffusion
+    pattern: "(?i)(dwi|diff)"
+    required: false
+  - role: susceptibility
+    pattern: "(?i)(swi|gre|t2\\*)"
+    required: false
+
+excluded_series:
+  - "(?i)(localizer|scout|survey)"
+  - "(?i)calibration"
+
+windowing:
+  maximum_window_size: 32
+  minimum_overlap: 8
+
+integration:
+  anatomy_key:
+    - localization.laterality
+    - localization.region
+  claim_key:
+    - localization.laterality
+    - localization.region
+    - localization.subregion
+    - observation_class
+    - certainty_status
+    - signal.t1
+    - signal.t2
+    - signal.fluid_sensitive
+    - signal.enhancement
+    - signal.restricted_diffusion
+    - morphology.shape
+    - morphology.margins
+    - morphology.mass_effect
+    - morphology.largest_dimension_mm_estimate
+  status_path: certainty_status
+  positive_statuses: [suspected, probable]
+  negative_statuses: [absent]
+
+prompt_region_block: |
+  Report any finding you can support from the supplied brain MRI window, including findings that
+  do not fit a common category. For each finding give the anatomical region and side, a free-text
+  location, signal behaviour on the available sequences, morphology, and mass effect.
+  Use observation_class unexpected_finding when the appearance does not match a familiar category,
+  and prefer indeterminate over a confident label when the evidence is insufficient.
+
+metadata:
+  notes: >
+    Sequence naming varies between scanners, so the patterns are intentionally
+    permissive and the optional roles are marked not required.

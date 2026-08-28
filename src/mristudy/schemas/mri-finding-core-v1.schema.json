@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mristudy.local/schemas/mri-finding-core-v1.schema.json",
+  "title": "Exploratory MRI finding, anatomy-independent core",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "study_purpose",
+    "body_region",
+    "findings",
+    "global_limitations",
+    "treatment_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "mri-finding-core-v1" },
+    "study_purpose": { "const": "exploratory_non_diagnostic" },
+    "body_region": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Region examined, for example knee, brain, ankle, elbow, orbit."
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "global_limitations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "treatment_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "treatment_recommendation_provided",
+        "repairability_determined",
+        "vascularity_directly_measured"
+      ],
+      "properties": {
+        "treatment_recommendation_provided": { "const": false },
+        "repairability_determined": { "const": false },
+        "vascularity_directly_measured": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "observation_class",
+        "certainty_status",
+        "localization",
+        "signal",
+        "morphology",
+        "imaging_factors_for_specialist_review",
+        "traceable_evidence",
+        "counter_evidence",
+        "limitations",
+        "confidence"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Label for this finding. Never an image evidence identifier."
+        },
+        "observation_class": {
+          "enum": [
+            "focal_lesion",
+            "signal_abnormality",
+            "structural_defect",
+            "fluid_collection",
+            "mass_or_mass_like",
+            "degenerative_change",
+            "post_traumatic_change",
+            "post_surgical_change",
+            "developmental_variant",
+            "artifact_suspected",
+            "unexpected_finding",
+            "indeterminate"
+          ],
+          "description": "Deliberately broad so an unanticipated pathology can be reported."
+        },
+        "certainty_status": {
+          "enum": ["absent", "suspected", "probable", "indeterminate", "not_evaluable"]
+        },
+        "localization": { "$ref": "#/$defs/localization" },
+        "signal": { "$ref": "#/$defs/signal" },
+        "morphology": { "$ref": "#/$defs/morphology" },
+        "region_specific": {
+          "type": "object",
+          "description": "Optional region module validated by the profile schema."
+        },
+        "imaging_factors_for_specialist_review": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "traceable_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "counter_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "limitations": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "confidence": { "enum": ["low", "medium", "high"] }
+      }
+    },
+    "localization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["laterality", "region", "description"],
+      "properties": {
+        "laterality": {
+          "enum": ["left", "right", "midline", "bilateral", "not_applicable", "indeterminate"]
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Anatomical region in the examined body part."
+        },
+        "subregion": { "type": ["string", "null"] },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Free-text location so an unnamed site can still be reported."
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t1", "t2", "fluid_sensitive", "enhancement"],
+      "properties": {
+        "t1": { "$ref": "#/$defs/signalLevel" },
+        "t2": { "$ref": "#/$defs/signalLevel" },
+        "fluid_sensitive": { "$ref": "#/$defs/signalLevel" },
+        "enhancement": {
+          "enum": ["absent", "present", "not_assessable", "no_contrast_administered", "indeterminate"]
+        },
+        "restricted_diffusion": {
+          "enum": ["absent", "present", "not_assessable", "indeterminate"]
+        }
+      }
+    },
+    "signalLevel": {
+      "enum": ["hypointense", "isointense", "hyperintense", "heterogeneous", "not_assessable", "indeterminate"]
+    },
+    "morphology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["margins", "mass_effect"],
+      "properties": {
+        "largest_dimension_mm_estimate": { "type": ["number", "null"] },
+        "measurement_method": {
+          "enum": ["geometry_calibrated", "visual_estimate", "not_measurable"]
+        },
+        "shape": {
+          "enum": ["round", "ovoid", "linear", "irregular", "diffuse", "indeterminate"]
+        },
+        "margins": {
+          "enum": ["well_defined", "ill_defined", "mixed", "not_assessable", "indeterminate"]
+        },
+        "mass_effect": {
+          "enum": ["absent", "present", "not_assessable", "indeterminate"]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["export_id", "role", "description"],
+      "properties": {
+        "export_id": { "type": "string", "pattern": "^image-[0-9]{6}$" },
+        "role": { "enum": ["supporting", "counter", "context"] },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

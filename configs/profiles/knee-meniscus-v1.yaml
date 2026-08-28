@@ -1,71 +1,79 @@
+# Knee meniscus profile, compatible with the locked knee-meniscus-finding-v2 results.
+#
+# This file is authoritative: series selection, schema choice, windowing and
+# integration semantics are read from here. Values duplicated in code were
+# removed, because an earlier version of this file drifted from the code it
+# claimed to describe and listed status values the schema rejects.
+profile_schema_version: 1
+
 name: knee-meniscus-v1
-modality: MR
-anatomy: knee
+body_region: knee
 task: exploratory-meniscus-review
-preferred_series:
-  - pattern: "(?i)sag.*3d.*(pd|dp).*fs"
-    role: primary-volume
-  - pattern: "(?i)mpr.*sag.*(pd|dp).*fs"
-    role: sagittal-meniscus
-  - pattern: "(?i)mpr.*cor.*(pd|dp).*fs"
-    role: coronal-confirmation
-  - pattern: "(?i)mpr.*ax.*(pd|dp).*fs"
-    role: axial-confirmation
-  - pattern: "(?i)sag.*t1"
-    role: anatomy-correlation
-structures:
-  - medial_meniscus_anterior_horn
-  - medial_meniscus_body
-  - medial_meniscus_posterior_horn
-  - medial_meniscus_roots
-  - lateral_meniscus_anterior_horn
-  - lateral_meniscus_body
-  - lateral_meniscus_posterior_horn
-  - lateral_meniscus_roots
-statuses: [normal, suspect, positive, indeterminate, not_evaluable]
 output_schema: knee-meniscus-finding-v2
-medgemma_windowing:
-  enabled: true
+
+# Matched case-insensitively against the anonymous SeriesDescription.
+series_roles:
+  - role: primary-volume
+    pattern: "(?i)sag.*3d.*(pd|dp).*fs"
+  - role: sagittal-meniscus
+    pattern: "(?i)mpr.*sag.*(pd|dp).*fs"
+  - role: coronal-confirmation
+    pattern: "(?i)mpr.*cor.*(pd|dp).*fs"
+  - role: axial-confirmation
+    pattern: "(?i)mpr.*ax.*(pd|dp).*fs"
+  - role: anatomy-correlation
+    pattern: "(?i)sag.*t1"
+
+excluded_series:
+  - "(?i)mpr.*smartknee"
+
+windowing:
   maximum_window_size: 32
   minimum_overlap: 8
-  require_complete_coverage: true
-  evidence_ids_scope: study_arm
-  ordering:
-    primary: dicom_geometry
-    fallback: instance_number_then_sop_instance_uid
-  excluded_series:
-    - pattern: "(?i)mpr.*smartknee"
-      reason: excluded_from_primary_meniscal_analysis
-tear_patterns:
-  - none
-  - horizontal
-  - vertical_longitudinal
-  - radial
-  - complex
-  - flap
-  - bucket_handle
-  - root_tear
-  - meniscocapsular
-  - other
-  - indeterminate
-vascular_zone_estimates:
-  - red_red
-  - red_white
-  - white_white
-  - junctional
-  - indeterminate
-vascularity_directly_observed: false
-treatment_recommendation_allowed: false
-repairability_determination_allowed: false
-specialist_review_factors:
-  - meniscocapsular_distance
-  - peripheral_extension
-  - surface_extension
-  - displaced_fragment
-  - flap
-  - bucket_handle_pattern
-  - root_involvement
-  - extrusion
-  - parameniscal_cyst
-  - tissue_quality_imaging_estimate
-  - chronicity_imaging_estimate
+
+integration:
+  # Same body location.
+  anatomy_key:
+    - meniscus
+    - segment
+  # Same assertion about that location. Contradictions between windows are
+  # preserved as separate variants rather than resolved by majority.
+  claim_key:
+    - meniscus
+    - segment
+    - tear_status
+    - tear_pattern
+    - orientation
+    - vascular_zone_estimate.zone
+    - vascular_zone_estimate.basis
+    - capsular_relation.distance_mm_estimate
+    - capsular_relation.measurement_method
+    - capsular_relation.peripheral_extension
+    - capsular_relation.meniscocapsular_separation
+    - surface_extension.superior
+    - surface_extension.inferior
+    - surface_extension.free_edge
+    - stability_features.displaced_fragment
+    - stability_features.flap
+    - stability_features.bucket_handle_pattern
+    - stability_features.imaging_signs_of_mechanical_obstruction
+    - healing_context.extrusion_mm_estimate
+    - healing_context.parameniscal_cyst
+    - healing_context.root_involvement
+    - healing_context.tissue_quality_imaging_estimate
+    - healing_context.chronicity_imaging_estimate
+  status_path: tear_status
+  positive_statuses: [suspected, probable]
+  negative_statuses: [absent]
+
+prompt_region_block: |
+  For every absent, suspected, probable, indeterminate, or non-evaluable meniscal finding,
+  document the medial or lateral meniscus and exact segment, the probable tear pattern and
+  orientation, extension to the superior surface, inferior surface, or free edge, the relation to
+  the meniscocapsular margin, and a conventional vascular-zone estimate.
+  The vascular-zone field is an anatomical estimate, not a measurement of blood flow.
+
+metadata:
+  notes: >
+    Retained for regression against the completed lex-knee-mri run. The clinical
+    vocabulary lives in the schema; this profile must not restate it.

@@ -1,43 +1,36 @@
 from __future__ import annotations
 
 import json
-from importlib.resources import files
 from typing import Any
 
-from jsonschema import Draft202012Validator
+from .schema_registry import SCHEMA_FILES, empty_result, load_schema, validate_result
 
 SCHEMA_VERSION = "knee-meniscus-finding-v2"
 
+# Region-specific helpers are retained so existing callers and locked artifacts
+# keep working. New code should use the registry directly and pass an explicit
+# schema version.
+__all__ = [
+    "SCHEMA_FILES",
+    "SCHEMA_VERSION",
+    "clinical_summary",
+    "empty_knee_meniscus_result",
+    "load_knee_meniscus_schema",
+    "parse_structured_model_result",
+    "validate_knee_meniscus_result",
+]
+
 
 def load_knee_meniscus_schema() -> dict[str, Any]:
-    schema_path = files("mristudy.schemas").joinpath("knee-meniscus-finding-v2.schema.json")
-    with schema_path.open(encoding="utf-8") as handle:
-        return json.load(handle)
+    return load_schema(SCHEMA_VERSION)
 
 
 def validate_knee_meniscus_result(result: dict[str, Any]) -> list[dict[str, str]]:
-    validator = Draft202012Validator(load_knee_meniscus_schema())
-    return [
-        {
-            "path": ".".join(str(part) for part in error.absolute_path),
-            "message": error.message,
-        }
-        for error in sorted(validator.iter_errors(result), key=lambda item: list(item.path))
-    ]
+    return validate_result(result, SCHEMA_VERSION)
 
 
 def empty_knee_meniscus_result() -> dict[str, Any]:
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "study_purpose": "exploratory_non_diagnostic",
-        "findings": [],
-        "global_limitations": [],
-        "treatment_boundary": {
-            "treatment_recommendation_provided": False,
-            "repairability_determined": False,
-            "vascularity_directly_measured": False,
-        },
-    }
+    return empty_result(SCHEMA_VERSION)
 
 
 def parse_structured_model_result(response: dict[str, Any]) -> dict[str, Any]:
