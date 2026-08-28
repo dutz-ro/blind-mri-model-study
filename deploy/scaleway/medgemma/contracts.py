@@ -12,6 +12,12 @@ __all__ = [
 
 OUTPUT_SCHEMA = "knee-meniscus-finding-v2"
 
+
+def _expected_schema(approved: dict[str, Any]) -> str:
+    """The approved window names the schema; fall back to the knee default."""
+    declared = approved.get("output_schema")
+    return declared if isinstance(declared, str) and declared else OUTPUT_SCHEMA
+
 def validate_window_payload(payload: dict[str, Any], approved: dict[str, Any]) -> list[str]:
     errors = []
     instance_uids = payload.get("instance_uids") or []
@@ -26,7 +32,7 @@ def validate_window_payload(payload: dict[str, Any], approved: dict[str, Any]) -
         errors.append("duplicate instance UID")
     if len(evidence_ids) != len(set(evidence_ids)):
         errors.append("duplicate evidence ID")
-    if payload.get("output_schema") != OUTPUT_SCHEMA:
+    if payload.get("output_schema") != _expected_schema(approved):
         errors.append("unsupported output schema")
     for key in (
         "study_uid",

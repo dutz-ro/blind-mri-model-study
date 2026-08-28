@@ -27,7 +27,10 @@ def test_runtime_is_syntax_valid_and_has_required_private_endpoints() -> None:
 
 def test_runtime_pins_schema_and_supports_offline_model_snapshot() -> None:
     source = RUNTIME.read_text(encoding="utf-8")
-    assert 'PROMPT_SCHEMA_VERSION = "knee-meniscus-finding-v2"' in source
+    # The runtime resolves its schema version from the mounted schema rather
+    # than pinning one literal, so a different body region can run.
+    assert "def _mounted_schema_version()" in source
+    assert 'PROMPT_SCHEMA_VERSION = _mounted_schema_version()' in source
     assert 'MODEL_PATH = os.environ.get("MEDGEMMA_MODEL_PATH", "")' in source
     assert '"local_files_only": True' in source
     assert '"MEDGEMMA_MODEL_PATH is required."' in source

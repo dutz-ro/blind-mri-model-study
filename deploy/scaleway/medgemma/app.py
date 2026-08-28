@@ -43,10 +43,28 @@ ORTHANC_DICOMWEB_URL = os.environ.get(
 MODEL_ID = os.environ.get("MEDGEMMA_MODEL_ID", "google/medgemma-1.5-4b-it")
 MODEL_REVISION = os.environ.get("MEDGEMMA_MODEL_REVISION", "")
 MODEL_PATH = os.environ.get("MEDGEMMA_MODEL_PATH", "")
-PROMPT_SCHEMA_VERSION = "knee-meniscus-finding-v2"
 RESULT_SCHEMA_PATH = os.environ.get(
     "RESULT_SCHEMA_PATH", "/app/knee-meniscus-finding-v2.schema.json"
 )
+
+
+def _mounted_schema_version() -> str:
+    """Read the schema version the container was actually given.
+
+    The runtime used to pin one literal, so a study of a different body region
+    could not run at all. The mounted schema is authoritative and the approved
+    plan must agree with it.
+    """
+    try:
+        with open(RESULT_SCHEMA_PATH, encoding="utf-8") as handle:
+            schema = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return ""
+    declared = (schema.get("properties") or {}).get("schema_version", {}).get("const")
+    return declared if isinstance(declared, str) else ""
+
+
+PROMPT_SCHEMA_VERSION = _mounted_schema_version() or "knee-meniscus-finding-v2"
 APPROVED_PLAN_PATH = os.environ.get("APPROVED_PLAN_PATH", "/run/mristudy/medgemma-run-plan.json")
 APPROVED_PLAN_SHA256 = os.environ.get("APPROVED_PLAN_SHA256", "")
 PROBE_AUTHORIZATION_PATH = os.environ.get(
@@ -106,7 +124,7 @@ class AnalyzeWindowRequest(BaseModel):
     evidence_ids: list[str]
     prompt: str
     prompt_sha256: str
-    output_schema: Literal["knee-meniscus-finding-v2"]
+    output_schema: str
     max_new_tokens: int = 4096
     generation: dict[str, object]
     decoder: dict[str, object]
