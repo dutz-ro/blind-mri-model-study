@@ -28,20 +28,30 @@ import argparse
 import json
 import shutil
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[0] / "src"))
 
-from mristudy.medgemma.integrity import require_valid_evidence_map  # noqa: E402
+from mristudy.medgemma.integrity import (  # noqa: E402
+    recompute_plan_sha256,
+    require_valid_evidence_map,
+)
+from mristudy.medgemma.output_contract import (  # noqa: E402
+    MAX_NEW_TOKENS,
+    decoder_contract,
+    generation_policy,
+    output_contract,
+)
 from mristudy.medgemma.runner import run_window_plan  # noqa: E402
 from mristudy.profiles import load_profile_by_name  # noqa: E402
-from mristudy.prompts import medgemma_prompt_for_profile  # noqa: E402
+from mristudy.prompts import medgemma_prompt_for_profile, medgemma_window_prompt  # noqa: E402
 from mristudy.report_bundle import (  # noqa: E402
     build_viewer_bundle,
     evidence_summary_from_multiplanar_provenance,
 )
-from mristudy.schema_registry import empty_result  # noqa: E402
+from mristudy.schema_registry import empty_result, load_schema  # noqa: E402
 from mristudy.utils import load_json, sha256_bytes  # noqa: E402
 
 
@@ -206,6 +216,35 @@ class DryRunClient:
         }
 
 
+def _rebind_current_contract(
+    stored_plan: dict[str, Any], profile: Any
+) -> dict[str, Any]:
+    """Clone an approved topology under the code's current inference contract.
+
+    The study plan is immutable and must continue to describe the run it
+    authorized. A local dry-run needs the same 26-window topology but the prompt,
+    decoder and output-contract digests from the code under test. Rebinding a
+    private copy proves the new contract end to end without changing study state,
+    approvals, DICOM membership or any persisted medical artifact.
+    """
+    plan = deepcopy(stored_plan)
+    prompt = medgemma_prompt_for_profile(profile)
+    decoder = decoder_contract(load_schema(profile.output_schema))
+    plan["prompt_sha256"] = sha256_bytes(prompt.encode())
+    plan["decoder"] = decoder
+    plan["output_contract"] = output_contract()
+    for window in plan.get("windows") or []:
+        window["max_new_tokens"] = MAX_NEW_TOKENS
+        window["generation"] = generation_policy()
+        window["decoder"] = decoder
+        window["output_contract"] = output_contract()
+        window["prompt_sha256"] = sha256_bytes(
+            medgemma_window_prompt(prompt, window).encode()
+        )
+    plan["plan_sha256"] = recompute_plan_sha256(plan)
+    return plan
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--study", required=True, help="study identifier")
@@ -228,9 +267,10 @@ def main() -> int:
     if not study_root.is_dir():
         raise SystemExit(f"Study not found: {study_root}")
 
-    plan = load_json(study_root / "state/medgemma-run-plan.json")
+    stored_plan = load_json(study_root / "state/medgemma-run-plan.json")
     state = load_json(study_root / "state/status.json")
     profile = load_profile_by_name(state["profile"])
+    plan = _rebind_current_contract(stored_plan, profile)
     evidence_manifest = load_json(study_root / "manifests/medgemma-evidence-map.json")
     evidence_map = require_valid_evidence_map(evidence_manifest, plan)
 

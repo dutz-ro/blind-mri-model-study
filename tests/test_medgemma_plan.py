@@ -94,7 +94,7 @@ def test_full_plan_has_617_unique_slices_and_26_windows(tmp_path: Path) -> None:
     assert plan["decoder"]["evidence_ids_enumerated"] is True
     assert plan["historical_replay_sha256"] == "a" * 64
     assert plan["schema_version"] == 3
-    assert plan["output_contract"]["validation"] == "medgemma-output-validation-v2"
+    assert plan["output_contract"]["validation"] == "medgemma-output-validation-v3"
     assert plan["evidence_trace_contract"]["policy"] == "evidence-traceability-v2"
     assert all(window["output_contract"] == plan["output_contract"] for window in plan["windows"])
 

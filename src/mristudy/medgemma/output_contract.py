@@ -11,11 +11,11 @@ from jsonschema import Draft202012Validator
 
 EXTRACTION_POLICY = "medgemma-json-extraction-v2"
 NORMALIZATION_POLICY = "medgemma-normalization-v2"
-OUTPUT_VALIDATION_POLICY = "medgemma-output-validation-v2"
+OUTPUT_VALIDATION_POLICY = "medgemma-output-validation-v3"
 CORRECTION_POLICY = "medgemma-structural-correction-v2"
 MAX_OUTPUT_CHARACTERS = 1_000_000
 MAX_JSON_DEPTH = 128
-DECODER_POLICY = "medgemma-lmfe-decoder-v3"
+DECODER_POLICY = "medgemma-lmfe-decoder-v4"
 DECODER_IMPLEMENTATION = "lm-format-enforcer"
 DECODER_VERSION = "0.11.3"
 DECODER_CONFIG = {
@@ -23,10 +23,10 @@ DECODER_CONFIG = {
     "max_json_array_length": 128,
     "max_consecutive_whitespaces": 12,
 }
-GENERATION_POLICY = "medgemma-constrained-greedy-v3"
+GENERATION_POLICY = "medgemma-constrained-greedy-v4"
 EVIDENCE_ID_PATTERN = r"^image-[0-9]{6}$"
 
-OUTPUT_BOUNDS_POLICY = "medgemma-decoder-output-bounds-v1"
+OUTPUT_BOUNDS_POLICY = "medgemma-decoder-output-bounds-v2"
 # The canonical schema deliberately bounds no array and no free-text string: it
 # describes what a finding *is*, not how much of it one window may contain. That
 # left the decodable output infinite, so no token budget could ever be a
@@ -42,13 +42,14 @@ OUTPUT_BOUNDS_POLICY = "medgemma-decoder-output-bounds-v1"
 # bounds can only prevent output, never invalidate it. Repeated identical claims
 # are merged by series integration anyway, so a per-window cap costs no clinical
 # content.
-# Every bound sits above the widest value observed across the 32 preserved
+# Every bound except findings sits above the widest value observed across the 32 preserved
 # structured window results, so the limits cut off runaway repetition rather
 # than legitimate reporting. The observed maxima were: 65 free-text characters,
 # 9 supporting citations, 2 counter citations, 5 finding limitations, 2 review
 # factors and 8 global limitations. Findings peaked at 8, but that single case
 # was the degenerate repetition this policy exists to stop; the 95th percentile
-# is 2.
+# is 2, so three leaves room for distinct focal observations without permitting
+# a six-item template loop.
 MAX_FREE_TEXT_CHARACTERS = 128
 DEFAULT_ARRAY_BOUND = 4
 ARRAY_BOUNDS = {
@@ -58,6 +59,9 @@ ARRAY_BOUNDS = {
     "counter_evidence": 4,
     "imaging_factors_for_specialist_review": 4,
     "limitations": 6,
+}
+SCHEMA_ARRAY_BOUNDS = {
+    "knee-meniscus-finding-v2": {"findings": 3},
 }
 # A JSON number has no length constraint in the schema and none in the decoder,
 # so the worst case is modelled with a wide fixed-point placeholder instead of
@@ -71,12 +75,13 @@ MAX_NUMERIC_PLACEHOLDER = 1234567890.123456
 MAX_NEW_TOKENS = 12288
 OUTPUT_BUDGET_MARGIN_TOKENS = 512
 # Measured with the pinned MedGemma tokenizer on the bounds above, for the
-# widest approved window of 32 images: the maximum decodable output is 46_394
-# characters and 10_791 tokens, so 11_303 tokens are required including the
-# margin. The character figure is asserted locally without a tokenizer; widening
-# any bound raises it, fails the test, and forces the token proof to be run
-# again before the budget is trusted.
-PROVED_MAXIMUM_STRUCTURAL_CHARACTERS = 46_394
+# widest approved knee window of 32 images. The previous six-finding contract
+# was 46_394 characters and 10_791 tokens, so the unchanged 12_288-token budget
+# remains a safe ceiling; the smaller focal bound is re-proved below and a
+# runtime tokenizer probe is still required before medical access. The character
+# figure is asserted locally without a tokenizer; widening any bound raises it,
+# fails the test, and forces the token proof to be run again.
+PROVED_MAXIMUM_STRUCTURAL_CHARACTERS = 23_942
 LONG_OUTPUT_PROBE_RECORDS = 96
 LONG_OUTPUT_PROBE_MIN_TOKENS = 4097
 
@@ -172,6 +177,10 @@ def decoder_schema(
     """
     allowed = list(dict.fromkeys(evidence_ids or []))
     named_children = {"properties", "$defs", "definitions"}
+    schema_version = (
+        ((schema.get("properties") or {}).get("schema_version") or {}).get("const")
+    )
+    schema_bounds = SCHEMA_ARRAY_BOUNDS.get(str(schema_version), {})
 
     def convert(value: Any, key: str = "") -> Any:
         if isinstance(value, list):
@@ -196,7 +205,9 @@ def decoder_schema(
             converted.pop("pattern")
             converted["enum"] = allowed
         if converted.get("type") == "array" and "maxItems" not in converted:
-            converted["maxItems"] = ARRAY_BOUNDS.get(key, DEFAULT_ARRAY_BOUND)
+            converted["maxItems"] = schema_bounds.get(
+                key, ARRAY_BOUNDS.get(key, DEFAULT_ARRAY_BOUND)
+            )
         if (
             converted.get("type") == "string"
             and "maxLength" not in converted
@@ -215,6 +226,7 @@ def decoder_output_bounds() -> dict[str, Any]:
         "max_free_text_characters": MAX_FREE_TEXT_CHARACTERS,
         "default_array_items": DEFAULT_ARRAY_BOUND,
         "array_items": dict(ARRAY_BOUNDS),
+        "schema_array_items": deepcopy(SCHEMA_ARRAY_BOUNDS),
     }
 
 
@@ -268,6 +280,7 @@ def maximum_structural_output(
     result = build(bounded)
     if isinstance(result, dict):
         _assign_distinct_evidence(result, list(dict.fromkeys(evidence_ids or [])))
+        _assign_distinct_finding_claims(result)
     return result
 
 
@@ -321,6 +334,30 @@ def _assign_distinct_evidence(result: dict[str, Any], evidence_ids: list[str]) -
                     cursor += 1
                 if "role" in entry:
                     entry["role"] = role
+
+
+def _assign_distinct_finding_claims(result: dict[str, Any]) -> None:
+    """Keep the constructed maximum inside the focal semantic contract."""
+    findings = result.get("findings")
+    if not isinstance(findings, list):
+        return
+    variants = [
+        ("medial", "posterior_horn", "probable", "horizontal", "horizontal"),
+        ("medial", "body", "suspected", "complex", "multidirectional"),
+        ("lateral", "posterior_horn", "indeterminate", "indeterminate", "indeterminate"),
+    ]
+    for finding, (meniscus, segment, status, pattern, orientation) in zip(
+        findings, variants, strict=False
+    ):
+        if not isinstance(finding, dict):
+            continue
+        finding.update(
+            meniscus=meniscus,
+            segment=segment,
+            tear_status=status,
+            tear_pattern=pattern,
+            orientation=orientation,
+        )
 
 
 def policy_digest(policy: str, payload: Any) -> str:
@@ -762,6 +799,48 @@ def validate_result(
         )
     ]
     errors.extend(validate_evidence_structure(result))
+    errors.extend(validate_window_finding_semantics(result))
+    return errors
+
+
+def validate_window_finding_semantics(result: dict[str, Any]) -> list[str]:
+    """Reject the repetitive normal-template failure mode seen in the final run.
+
+    The window task is focal. An absent finding carries no focal observation and
+    belongs in an empty findings array. Multiple findings with the same anatomy
+    and claim fields but different evidence IDs are one claim repeated per image,
+    not independent clinical content. These errors trigger another image-aware
+    generation rather than silently accepting a degenerate window.
+    """
+    if result.get("schema_version") != "knee-meniscus-finding-v2":
+        return []
+    findings = result.get("findings") or []
+    if not isinstance(findings, list):
+        return []
+    errors = []
+    seen: dict[tuple[Any, ...], int] = {}
+    claim_fields = (
+        "meniscus",
+        "segment",
+        "tear_status",
+        "tear_pattern",
+        "orientation",
+    )
+    for index, finding in enumerate(findings):
+        if not isinstance(finding, dict):
+            continue
+        if finding.get("tear_status") == "absent":
+            errors.append(
+                f"findings.{index}: absent finding must be omitted; use an empty findings array"
+            )
+        claim = tuple(finding.get(field) for field in claim_fields)
+        previous = seen.get(claim)
+        if previous is not None:
+            errors.append(
+                f"findings.{index}: repeated anatomical claim duplicates findings.{previous}"
+            )
+        else:
+            seen[claim] = index
     return errors
 
 

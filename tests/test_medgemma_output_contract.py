@@ -15,6 +15,7 @@ from mristudy.medgemma.output_contract import (
     MAX_NEW_TOKENS,
     OUTPUT_BUDGET_MARGIN_TOKENS,
     PROVED_MAXIMUM_STRUCTURAL_CHARACTERS,
+    SCHEMA_ARRAY_BOUNDS,
     classify_output,
     decoder_acceptance,
     decoder_output_bounds,
@@ -109,7 +110,7 @@ def test_out_of_window_evidence_is_canonically_valid() -> None:
     )
     assert decision.status == "exact_valid"
     assert decision.result == result
-    assert decision.validation_policy == "medgemma-output-validation-v2"
+    assert decision.validation_policy == "medgemma-output-validation-v3"
     assert structural_correction_errors(decision) == []
 
 
@@ -260,7 +261,45 @@ def test_generation_policy_neutralizes_repetition_processors() -> None:
     assert policy["repetition_penalty"] == 1.0
     assert policy["no_repeat_ngram_size"] == 0
     assert policy["evidence_ids_enumerated"] is True
-    assert DECODER_POLICY == "medgemma-lmfe-decoder-v3"
+    assert DECODER_POLICY == "medgemma-lmfe-decoder-v4"
+
+
+def test_absent_window_findings_are_rejected_as_non_focal() -> None:
+    result = valid_result()
+    finding = result["findings"][0]
+    finding["tear_status"] = "absent"
+    finding["tear_pattern"] = "none"
+    finding["orientation"] = "not_applicable"
+    decision = classify_output(
+        serialized(result), load_knee_meniscus_schema(), ["image-000123"]
+    )
+    assert decision.result is None
+    assert any(
+        "absent finding must be omitted"
+        in error
+        for candidate in decision.candidates
+        for error in candidate["validation_errors"]
+    )
+
+
+def test_one_finding_per_image_repetition_is_rejected() -> None:
+    result = valid_result()
+    duplicate = deepcopy(result["findings"][0])
+    duplicate["finding_id"] = "finding-2"
+    duplicate["traceable_evidence"][0]["export_id"] = "image-000124"
+    result["findings"].append(duplicate)
+    decision = classify_output(
+        serialized(result),
+        load_knee_meniscus_schema(),
+        ["image-000123", "image-000124"],
+    )
+    assert decision.result is None
+    assert any(
+        "repeated anatomical claim"
+        in error
+        for candidate in decision.candidates
+        for error in candidate["validation_errors"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -339,7 +378,9 @@ def test_decoder_schema_bounds_every_array_and_free_text_string() -> None:
     ]
     assert not unbounded_arrays
     assert not unbounded_strings
-    assert constrained["properties"]["findings"]["maxItems"] == ARRAY_BOUNDS["findings"]
+    assert constrained["properties"]["findings"]["maxItems"] == (
+        SCHEMA_ARRAY_BOUNDS["knee-meniscus-finding-v2"]["findings"]
+    )
     assert (
         constrained["$defs"]["evidence"]["properties"]["description"]["maxLength"]
         == MAX_FREE_TEXT_CHARACTERS
@@ -359,7 +400,9 @@ def test_maximum_structural_output_is_canonically_valid_and_finite() -> None:
     evidence_ids = [f"image-{index + 1:06d}" for index in range(32)]
     maximum = maximum_structural_output(canonical, evidence_ids)
     assert validate_result(maximum, canonical) == []
-    assert len(maximum["findings"]) == ARRAY_BOUNDS["findings"]
+    assert len(maximum["findings"]) == (
+        SCHEMA_ARRAY_BOUNDS["knee-meniscus-finding-v2"]["findings"]
+    )
     assert len(maximum["findings"][0]["traceable_evidence"]) == (
         ARRAY_BOUNDS["traceable_evidence"]
     )
@@ -378,4 +421,4 @@ def test_output_budget_leaves_margin_for_the_largest_decodable_result() -> None:
     assert OUTPUT_BUDGET_MARGIN_TOKENS > 0
     assert MAX_NEW_TOKENS > OUTPUT_BUDGET_MARGIN_TOKENS
     assert len(serialized) <= PROVED_MAXIMUM_STRUCTURAL_CHARACTERS
-    assert decoder_output_bounds()["policy"] == "medgemma-decoder-output-bounds-v1"
+    assert decoder_output_bounds()["policy"] == "medgemma-decoder-output-bounds-v2"

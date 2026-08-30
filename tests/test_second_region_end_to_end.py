@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from mristudy.medgemma.integration import integrate_multiplanar, integrate_series
+from mristudy.medgemma.output_contract import validate_window_finding_semantics
 from mristudy.medgemma.validation import evidence_traceability_warnings
 from mristudy.profiles import load_profile_by_name
 from mristudy.schema_registry import empty_result, load_schema, validate_result
@@ -85,6 +86,18 @@ def test_unexpected_pathology_can_be_reported() -> None:
         ]
     )
     assert validate_result(result, SCHEMA) == []
+
+
+def test_knee_focal_semantics_do_not_constrain_the_core_schema() -> None:
+    result = _result(
+        [
+            _finding("w1-01", "frontal_lobe", "suspected", ["image-000001"]),
+            _finding("w1-02", "parietal_lobe", "suspected", ["image-000002"]),
+            _finding("w1-03", "temporal_lobe", "suspected", ["image-000003"]),
+            _finding("w1-04", "occipital_lobe", "suspected", ["image-000004"]),
+        ]
+    )
+    assert validate_window_finding_semantics(result) == []
 
 
 def test_core_schema_keeps_the_safety_boundaries() -> None:

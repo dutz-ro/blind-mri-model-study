@@ -57,6 +57,9 @@ def test_runtime_pins_schema_and_supports_offline_model_snapshot() -> None:
     assert "for attempt in range(1 + maximum_corrections)" in source
     assert "if attempt < maximum_corrections" in source
     assert "for attempt in range(3)" not in source
+    assert "if attempt == 0 or image_aware_retry" in source
+    assert "image_aware_retry = True" in source
+    assert "Return only distinct focal suspected, probable" in source
 
 
 def test_runtime_orders_dicom_by_geometry_and_maps_evidence_ids() -> None:

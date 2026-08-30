@@ -67,10 +67,12 @@ integration:
   negative_statuses: [absent]
 
 prompt_region_block: |
-  For every absent, suspected, probable, indeterminate, or non-evaluable meniscal finding,
-  document the medial or lateral meniscus and exact segment, the probable tear pattern and
-  orientation, extension to the superior surface, inferior surface, or free edge, the relation to
-  the meniscocapsular margin, and a conventional vascular-zone estimate.
+  Report only a focal suspected, probable, or genuinely indeterminate meniscal observation.
+  Do not emit absent findings, one finding per image, or repeated claims about the same meniscus
+  and segment. If no focal observation is supported, return an empty findings array.
+  For every reported observation, document the medial or lateral meniscus and exact segment, the
+  probable tear pattern and orientation, extension to the superior surface, inferior surface, or
+  free edge, the relation to the meniscocapsular margin, and a conventional vascular-zone estimate.
   The vascular-zone field is an anatomical estimate, not a measurement of blood flow.
 
 metadata:

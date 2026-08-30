@@ -19,9 +19,14 @@ from typing import Any
 
 import pytest
 
+from mristudy.clinical_schema import load_knee_meniscus_schema
 from mristudy.errors import MRIStudyError
+from mristudy.medgemma.output_contract import decoder_contract, generation_policy, output_contract
 from mristudy.medgemma.runner import run_window_plan
-from mristudy.prompts import medgemma_json_suffix_v2, medgemma_knee_meniscus_prompt_v2
+from mristudy.prompts import (
+    medgemma_knee_meniscus_prompt_v2,
+    medgemma_window_prompt,
+)
 from mristudy.utils import sha256_bytes
 from tests.test_medgemma_runner import plan as single_window_plan
 
@@ -94,11 +99,25 @@ class ConformantClient:
 
 
 def _run(plan: dict[str, Any], run_dir: Path, client: ConformantClient) -> dict[str, Any]:
+    decoder = decoder_contract(load_knee_meniscus_schema())
+    plan["decoder"] = decoder
+    plan["output_contract"] = output_contract()
+    plan["windows"][0]["generation"] = generation_policy()
+    plan["windows"][0]["decoder"] = decoder
+    plan["windows"][0]["output_contract"] = output_contract()
+    prompt = medgemma_knee_meniscus_prompt_v2()
+    plan["windows"][0]["prompt_sha256"] = sha256_bytes(
+        medgemma_window_prompt(prompt, plan["windows"][0]).encode()
+    )
+    from mristudy.medgemma.integrity import recompute_plan_sha256
+
+    plan["plan_sha256"] = recompute_plan_sha256(plan)
+    client.plan = plan
     return run_window_plan(
         client,
         plan,
         run_dir,
-        medgemma_knee_meniscus_prompt_v2(),
+        prompt,
         provision_plan_sha256=PROVISION_SHA,
         snapshot_manifest_sha256=SNAPSHOT_SHA,
     )
@@ -120,14 +139,7 @@ def test_every_window_prompt_hash_matches_the_plan() -> None:
     plan = single_window_plan()
     base = medgemma_knee_meniscus_prompt_v2()
     for window in plan["windows"]:
-        expected = (
-            base
-            + f"\nThis window has role {window['role']}, ID {window['window_id']}, and "
-            + f"series description {window['series_description']!r}. Report only findings "
-            + "evaluable from this contiguous window. Use indeterminate for fields requiring "
-            + "another plane. Cite only the supplied global evidence IDs.\n"
-            + medgemma_json_suffix_v2()
-        )
+        expected = medgemma_window_prompt(base, window)
         assert window["prompt_sha256"] == sha256_bytes(expected.encode())
 
 

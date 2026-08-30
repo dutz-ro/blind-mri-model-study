@@ -78,8 +78,9 @@ def medgemma_region_prompt(
         f"non-diagnostic study. Return one JSON object matching {schema_version}. Do not emit",
         "prose, markdown, headings, or repeated normal statements. Use an empty findings array",
         "when no finding is supported; do not enumerate every normal slice or repeat an absent",
-        "finding. Preserve uncertainty and prefer indeterminate over a confident label when the",
-        "evidence is insufficient. Never recommend treatment, determine repairability, or claim",
+        "finding. Report focal observations only. Preserve uncertainty and use indeterminate only",
+        "for a focal observation whose status remains unresolved; do not use it as a placeholder",
+        "for every image or segment. Never recommend treatment, determine repairability, or claim",
         "directly observed vascularity.",
     ]
     if block:
@@ -126,7 +127,8 @@ def medgemma_window_prompt(base_prompt: str, window: dict[str, object]) -> str:
         base_prompt
         + f"\nThis window has role {window['role']}, ID {window['window_id']}, and "
         + f"series description {window['series_description']!r}. Report only findings "
-        + "evaluable from this contiguous window. Use indeterminate for fields requiring "
-        + "another plane. Cite only the supplied global evidence IDs.\n"
+        + "evaluable from this contiguous window. Do not emit one finding per image or repeat "
+        + "the same anatomical claim. Use indeterminate only for fields requiring another plane. "
+        + "Cite only the supplied global evidence IDs.\n"
         + json_suffix_for(str(window["output_schema"]))
     )

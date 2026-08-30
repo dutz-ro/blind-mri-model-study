@@ -141,6 +141,9 @@ def test_knee_profile_matches_the_locked_study_configuration() -> None:
     assert profile.integration.anatomy_key_paths == ("meniscus", "segment")
     assert profile.integration.status_path == "tear_status"
     assert profile.integration.positive_statuses == frozenset({"suspected", "probable"})
+    assert "Do not emit absent findings" in profile.prompt_region_block
+    assert "one finding per image" in profile.prompt_region_block
+    assert "empty findings array" in profile.prompt_region_block
 
 
 def test_brain_profile_uses_the_region_independent_schema() -> None:

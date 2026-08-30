@@ -9,10 +9,11 @@ from mristudy.medgemma.integrity import recompute_plan_sha256
 from mristudy.medgemma.output_contract import (
     MAX_NEW_TOKENS,
     decoder_contract,
+    generation_policy,
     output_contract,
 )
 from mristudy.medgemma.runner import execute_window, run_window_plan
-from mristudy.prompts import medgemma_json_suffix_v2, medgemma_knee_meniscus_prompt_v2
+from mristudy.prompts import medgemma_knee_meniscus_prompt_v2, medgemma_window_prompt
 from mristudy.utils import canonical_json, sha256_bytes
 from tests.medgemma_helpers import result_for_evidence
 
@@ -95,14 +96,6 @@ class FakeClient:
 
 def plan() -> dict:
     decoder = decoder_contract(load_knee_meniscus_schema())
-    prompt = (
-        medgemma_knee_meniscus_prompt_v2()
-        + "\nThis window has role primary-volume, ID primary-volume-window-0001, and "
-        + "series description 'primary'. Report only findings evaluable from this contiguous "
-        + "window. Use indeterminate for fields requiring another plane. Cite only the supplied "
-        + "global evidence IDs.\n"
-        + medgemma_json_suffix_v2()
-    )
     window = {
         "window_id": "primary-volume-window-0001",
         "role": "primary-volume",
@@ -119,25 +112,19 @@ def plan() -> dict:
                 {"instance_uids": ["1.2.5"], "evidence_ids": ["image-000001"]}
             )
         ),
-        "prompt_sha256": sha256_bytes(prompt.encode()),
         "output_schema": "knee-meniscus-finding-v2",
         "max_new_tokens": MAX_NEW_TOKENS,
         "maximum_structural_corrections": 2,
-        "generation": {
-            "do_sample": False,
-            "repetition_penalty": 1.0,
-            "no_repeat_ngram_size": 0,
-            "evidence_ids_enumerated": True,
-            "policy": "medgemma-constrained-greedy-v3",
-            "json_schema_enforced": True,
-            "canonical_eos_only": True,
-        },
+        "generation": generation_policy(),
         "decoder": decoder,
         "output_contract": output_contract(),
         "model_repository": "model",
         "model_revision": "revision",
         "runtime_digest": "sha256:runtime",
     }
+    window["prompt_sha256"] = sha256_bytes(
+        medgemma_window_prompt(medgemma_knee_meniscus_prompt_v2(), window).encode()
+    )
     result = {
         "windows": [window],
         "total_source_slices": 1,

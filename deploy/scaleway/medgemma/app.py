@@ -47,6 +47,7 @@ from output_contract import (
     strict_json_loads,
     structural_correction_errors,
     structural_correction_prompt,
+    validate_window_finding_semantics,
 )
 from PIL import Image
 from pydantic import BaseModel
@@ -888,6 +889,7 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
         torch.cuda.reset_peak_memory_stats()
         attempts = []
         prompt = request.prompt
+        image_aware_retry = False
         total_generation_seconds = 0.0
         parsed = None
         schema_errors: list[str] = []
@@ -895,7 +897,7 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
             result_schema = json.load(handle)
         maximum_corrections = int(approved["maximum_structural_corrections"])
         for attempt in range(1 + maximum_corrections):
-            if attempt == 0:
+            if attempt == 0 or image_aware_retry:
                 prompt_parts = prompt.rsplit("Return JSON now.", maxsplit=1)
                 content = [{"type": "text", "text": prompt_parts[0]}]
                 for evidence_id, image in zip(request.evidence_ids, images, strict=True):
@@ -936,6 +938,8 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
                 if decoder_replay["accepted"]
                 else ["decoder_contract_violated"]
             )
+            if parsed is not None:
+                schema_errors.extend(validate_window_finding_semantics(parsed))
             exhausted = generation_budget_exhausted(
                 generated_tokens,
                 request.max_new_tokens,
@@ -990,7 +994,26 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
                 schema_errors = ["deterministic_repeat"]
                 break
             if attempt < maximum_corrections:
-                prompt = _correction_prompt(request.prompt, attempt + 1, schema_errors, raw_text)
+                if any(
+                    "absent finding must be omitted" in error
+                    or "repeated anatomical claim" in error
+                    for error in schema_errors
+                ):
+                    image_aware_retry = True
+                    prompt = (
+                        request.prompt
+                        + "\nThe previous image-aware response was rejected because it emitted "
+                        + "absent findings or repeated the same anatomical claim. Reinspect the "
+                        + "supplied images. Return only distinct focal suspected, probable, or "
+                        + "genuinely indeterminate observations. If none is supported, return "
+                        + '"findings": []. Previous validation errors: '
+                        + "; ".join(schema_errors)[:1200]
+                    )
+                else:
+                    image_aware_retry = False
+                    prompt = _correction_prompt(
+                        request.prompt, attempt + 1, schema_errors, raw_text
+                    )
     except HTTPException:
         raise
     except Exception as error:
