@@ -2,11 +2,10 @@ __pycache__/
 *.py[cod]
 .DS_Store
 
-# Medical and study artifacts must remain outside Git.
+# The application is data-driven and carries no study content, so it is tracked.
+# What must never enter Git is the study data it reads at runtime.
 evidence/
-index.html
-tratament.html
-app.js
+report-bundle.json
 *.dcm
 *.dicom
 *.nii

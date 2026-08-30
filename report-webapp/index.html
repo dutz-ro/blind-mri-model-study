@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title data-i18n-title="index.title">Raport exploratoriu privat</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><span data-i18n="app.brand"></span></a>
+    <nav data-i18n-attr="aria-label:app.nav.label">
+      <a class="active" href="index.html" data-i18n="app.nav.findings"></a>
+      <a href="report.html" data-i18n="app.nav.report"></a>
+      <a href="options.html" data-i18n="app.nav.options"></a>
+    </nav>
+    <div class="topbar-tools">
+      <div class="language-picker" data-language-selector></div>
+      <span class="privacy-pill" data-i18n="app.privacyPill"></span>
+    </div>
+  </header>
+
+  <p class="load-status" data-load-status hidden></p>
+
+  <main>
+    <section class="report-hero shell">
+      <div class="hero-intro">
+        <p class="eyebrow" data-i18n="index.eyebrow"></p>
+        <h1><span data-i18n="index.heading"></span><br><span class="accent" data-i18n="index.headingAccent"></span></h1>
+        <p class="lede" data-i18n="index.lede"></p>
+      </div>
+      <div class="view-toggle" role="group" data-i18n-attr="aria-label:index.viewToggle.label">
+        <button class="active" type="button" data-view="plain" data-i18n="index.viewToggle.plain"></button>
+        <button type="button" data-view="clinical" data-i18n="index.viewToggle.clinical"></button>
+      </div>
+    </section>
+
+    <section class="shell coverage-strip">
+      <aside class="coverage-rail" data-i18n-attr="aria-label:index.coverage.title">
+        <div class="coverage-number" id="coverage-number">—</div>
+        <p data-i18n="index.coverage.slices"></p>
+        <dl>
+          <div><dt data-i18n="index.coverage.coverage"></dt><dd id="coverage-percent">—</dd></div>
+          <div><dt data-i18n="index.coverage.windows"></dt><dd id="coverage-windows">—</dd></div>
+        </dl>
+        <p class="rail-note" data-i18n="index.coverage.note"></p>
+      </aside>
+      <div id="vascular-panel"></div>
+    </section>
+
+    <section class="shell section independent-reports">
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="eyebrow" data-i18n="index.eyebrow"></p>
+          <h2 data-i18n="index.findingsHeading"></h2>
+        </div>
+        <p data-i18n="index.findingsNote"></p>
+      </div>
+      <div id="findings-list"></div>
+      <div id="global-limitations" class="global-limitations"></div>
+    </section>
+
+    <section class="reading-note">
+      <div class="shell note-layout">
+        <div>
+          <p class="eyebrow" data-i18n="index.readingNote.eyebrow"></p>
+          <h2 data-i18n="index.readingNote.heading"></h2>
+        </div>
+        <div>
+          <p data-i18n="index.readingNote.body"></p>
+          <ul class="marker-legend">
+            <li><span class="legend-dot support"></span><span data-i18n="index.legend.supporting"></span></li>
+            <li><span class="legend-dot context"></span><span data-i18n="index.legend.context"></span></li>
+            <li><span class="legend-dot counter"></span><span data-i18n="index.legend.counter"></span></li>
+            <li><span class="legend-dot unverified"></span><span data-i18n="index.legend.unverified"></span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <strong data-i18n="app.brand"></strong>
+      <p data-i18n="app.footer.disclaimer"></p>
+      <span data-i18n="app.footer.access"></span>
+    </div>
+  </footer>
+
+  <dialog id="evidence-dialog" class="evidence-dialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow" id="dialog-model"></p>
+        <h2 id="dialog-title"></h2>
+      </div>
+      <button class="close-button" type="button" data-i18n-attr="aria-label:dialog.close">×</button>
+    </div>
+    <p class="dialog-warning" data-i18n="dialog.warning"></p>
+    <div class="viewer-layout">
+      <div class="main-image-wrap">
+        <div class="image-canvas" id="image-canvas">
+          <img id="main-evidence" alt="">
+        </div>
+      </div>
+      <aside>
+        <div id="evidence-meta"></div>
+        <div class="zoom-controls">
+          <button type="button" data-zoom="out" data-i18n-attr="aria-label:dialog.zoomOut">−</button>
+          <span id="zoom-label">100%</span>
+          <button type="button" data-zoom="in" data-i18n-attr="aria-label:dialog.zoomIn">+</button>
+        </div>
+      </aside>
+    </div>
+    <div class="evidence-thumbs" id="evidence-thumbs"></div>
+  </dialog>
+
+  <script type="module" src="js/findings.js"></script>
+</body>
+</html>

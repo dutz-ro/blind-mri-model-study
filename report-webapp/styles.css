@@ -151,3 +151,111 @@ footer .shell { display: grid; grid-template-columns: auto 1fr auto; gap: 30px; 
   .hard-disclaimer { grid-template-columns: 1fr; gap: 8px; }.treatment-card { grid-template-columns: 45px 1fr; padding: 38px 0; }.treatment-title h2 { font-size: 32px; }.treatment-body { grid-template-columns: 1fr; gap: 22px; }.treatment-illustration { grid-row: auto; height: 210px; }.outcome-box { grid-column: 1; }.question-grid { grid-template-columns: 1fr; }.question-grid div { min-height: 135px; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; }.pulse { animation: none; } * { transition: none !important; } }
+
+/* ---------------------------------------------------------------------------
+   Trilingual data-driven viewer
+   The pages carry no study text, so these rules style content built at runtime
+   from report-bundle.json and the active dictionary.
+   --------------------------------------------------------------------------- */
+
+.topbar-tools { justify-self: end; display: inline-flex; align-items: center; gap: 12px; }
+.language-picker { display: inline-flex; align-items: center; gap: 8px; }
+.language-label { font: 800 10px/1 "Arial Narrow", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.language-select { min-height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); font-weight: 800; font-size: 12px; letter-spacing: .06em; }
+
+.load-status { margin: 0; padding: 14px max(24px, calc((100vw - 1180px) / 2)); background: #fdece8; border-bottom: 1px solid var(--coral); color: #8a2d1c; font-size: 14px; }
+
+.hero-intro { max-width: 640px; }
+h1 .accent { color: var(--coral); font-style: italic; }
+.plain-view, .clinical-view { margin-block: 14px; }
+.empty-state { color: var(--muted); font-style: italic; }
+
+.coverage-strip { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 28px; align-items: start; margin-block: 46px; }
+@media (max-width: 900px) { .coverage-strip { grid-template-columns: 1fr; } }
+
+/* Vascular zone --------------------------------------------------------- */
+.vascular-panel { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 26px; }
+.vascular-panel h2 { font-size: 30px; margin-bottom: 10px; }
+.panel-lede { color: var(--muted); margin-top: 0; }
+.vascular-summary { font-weight: 700; font-size: 17px; }
+.zone-distribution { list-style: none; margin: 18px 0 14px; padding: 0; display: grid; gap: 10px; }
+.zone-chip { display: grid; grid-template-columns: auto auto 1fr; gap: 12px; align-items: baseline; padding: 10px 14px; border: 1px solid var(--line); border-left-width: 5px; border-radius: var(--radius); background: var(--white); }
+.zone-chip.zone-white_white { border-left-color: #9aa59f; }
+.zone-chip.zone-red_white { border-left-color: var(--amber); }
+.zone-chip.zone-red_red { border-left-color: var(--coral); }
+.zone-chip.zone-junctional { border-left-color: var(--teal); }
+.zone-chip.zone-indeterminate { border-left-color: var(--line); }
+.zone-name { font-weight: 800; }
+.zone-count { font-variant-numeric: tabular-nums; color: var(--teal-deep); font-weight: 700; }
+.zone-meaning { color: var(--muted); font-size: 14px; }
+.vascular-guard { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.vascular-line { margin-block: 18px; padding: 16px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--white); }
+.vascular-line h4 { margin: 0 0 10px; font: 800 11px/1 "Arial Narrow", sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--teal); }
+.vascular-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; }
+.vascular-facts dt { color: var(--muted); font-size: 13px; }
+.vascular-facts dd { margin: 0; font-weight: 700; font-size: 14px; }
+.vascular-interpretation { margin: 10px 0 0; font-size: 14px; }
+
+/* Findings -------------------------------------------------------------- */
+.finding-card { margin-bottom: 26px; }
+.finding-chips { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.evidence-status { border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.status-verified { border-color: var(--teal); color: var(--teal-deep); }
+.status-recovered { border-color: var(--amber); color: #8a6212; }
+.status-cross_window { border-color: var(--amber); color: #8a6212; }
+.status-unverified { border-color: var(--coral); color: #8a2d1c; }
+.evidence-count { color: var(--muted); font-size: 14px; }
+.clinical-table { display: grid; grid-template-columns: minmax(200px, 320px) 1fr; gap: 4px 18px; margin: 0; }
+.clinical-table dt { color: var(--muted); font-size: 14px; }
+.clinical-table dd { margin: 0; font-size: 14px; font-weight: 600; }
+.clinical-table dt.clinical-group { grid-column: 1 / -1; margin-top: 12px; font: 800 11px/1 "Arial Narrow", sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--teal); }
+.clinical-table dd.clinical-group-value { grid-column: 1 / -1; margin: 0; }
+.clinical-table dt.clinical-child { padding-left: 16px; }
+.free-text-list { margin: 0; padding-left: 18px; }
+.finding-limitations h4, .global-limitations h3 { font: 800 11px/1 "Arial Narrow", sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--teal); }
+.global-limitations { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 20px; }
+.model-text-value { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 13px; }
+.model-text-badge { margin-left: 8px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+
+/* Evidence dialog ------------------------------------------------------- */
+#main-evidence { --zoom: 1; width: 100%; transform: scale(var(--zoom)); transform-origin: center; transition: transform .12s ease-out; }
+.evidence-meta-list { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 16px; }
+.evidence-meta-list dt { color: var(--muted); font-size: 13px; }
+.evidence-meta-list dd { margin: 0; font-size: 14px; font-weight: 600; word-break: break-word; }
+.evidence-description h4 { margin: 0 0 6px; font: 800 11px/1 "Arial Narrow", sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--teal); }
+.thumb { padding: 0; border: 2px solid transparent; border-radius: var(--radius); background: none; cursor: pointer; line-height: 0; }
+.thumb img { width: 74px; height: 74px; object-fit: cover; border-radius: var(--radius); }
+.thumb.active { border-color: var(--coral); }
+
+/* Radiology report ------------------------------------------------------ */
+.report-sheet { max-width: 900px; }
+.report-title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+.report-title-row h1 { font-size: clamp(38px, 4.4vw, 60px); }
+.print-button { min-height: 44px; padding: 0 18px; border: 1px solid var(--teal); border-radius: var(--radius); background: var(--white); color: var(--teal-deep); font-weight: 800; cursor: pointer; }
+.report-section { margin-top: 40px; }
+.report-section h2 { font-size: 24px; letter-spacing: .1em; text-transform: uppercase; font-family: "Arial Narrow", sans-serif; font-weight: 800; border-bottom: 2px solid var(--ink); padding-bottom: 8px; }
+.report-section h3 { font-size: 20px; margin-bottom: 6px; }
+.report-header-list { display: grid; grid-template-columns: minmax(180px, 260px) 1fr; gap: 6px 20px; margin: 0; }
+.report-header-list dt { color: var(--muted); font-size: 14px; }
+.report-header-list dd { margin: 0; font-size: 15px; font-weight: 600; }
+.report-block { margin-bottom: 22px; }
+.report-sentence { margin: 0 0 10px; }
+.segment-label { text-transform: capitalize; }
+.not-assessed { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 26px; }
+.not-assessed h2 { border-bottom-color: var(--coral); }
+.not-assessed-list { columns: 2; column-gap: 32px; margin: 0; padding-left: 18px; }
+@media (max-width: 700px) { .not-assessed-list { columns: 1; } }
+.conclusion p { font-size: 17px; }
+.report-boundary { color: var(--muted); font-size: 14px; }
+.report-footnote { margin-top: 34px; color: var(--muted); font-size: 13px; }
+
+/* Topics ---------------------------------------------------------------- */
+.options-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 32px; }
+.option-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 22px; }
+.option-card h2 { font-size: 22px; margin-bottom: 8px; }
+
+@media print {
+  .topbar, footer, .print-button, .load-status { display: none; }
+  body { background: white; }
+  .report-section { break-inside: avoid; }
+}

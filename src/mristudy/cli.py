@@ -40,6 +40,7 @@ from .report_bundle import (
     build_viewer_bundle,
     evidence_summary_from_multiplanar_provenance,
     load_locked_model_results,
+    study_metadata,
 )
 from .reports import render_json_report
 from .state import NEXT_ACTION, Stage, StudyState
@@ -822,10 +823,13 @@ def viewer_bundle(
     if not model_results:
         raise MRIStudyError("No locked structured model result was found.")
     plan_path = paths.state / "medgemma-run-plan.json"
+    run_plan = load_json(plan_path) if plan_path.exists() else None
     evidence_summaries = {}
+    study = {}
     medgemma_lock = paths.manifests / "medgemma-results-lock.json"
     if medgemma_lock.exists():
         lock = load_json(medgemma_lock)
+        study = study_metadata(lock, run_plan)
         run_id = lock.get("run")
         provenance_pointer = lock.get("multiplanar_provenance")
         if run_id and isinstance(provenance_pointer, str):
@@ -841,9 +845,10 @@ def viewer_bundle(
         load_json(manifest_path),
         paths.anonymized,
         paths.reports / "viewer",
-        run_plan=load_json(plan_path) if plan_path.exists() else None,
+        run_plan=run_plan,
         export_images=not skip_images,
         evidence_summaries=evidence_summaries,
+        study=study,
     )
     atomic_json(paths.reports / "viewer" / "report-bundle.json", bundle)
     typer.echo(

@@ -42,6 +42,66 @@ STATUS_LABELS = {
 }
 
 
+LATERALITY_MARKERS = {
+    "left": ("gauche", "gaauche", "left", "stang", "stâng"),
+    "right": ("droit", "droite", "right", "drept"),
+}
+
+
+def study_metadata(
+    lock: dict[str, Any],
+    run_plan: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Describe the acquisition the report is about, without asserting anatomy.
+
+    The report page needs to state which sequences were analysed and how much of
+    them, so a reader can see the scope of a claim. Laterality is derived from
+    the approved series descriptions and is reported as a derivation, never as an
+    independent observation: the study analysed meniscal appearance, not side.
+    """
+    windows = (run_plan or {}).get("windows") or []
+    sequences: list[dict[str, Any]] = []
+    for window in windows:
+        role = window.get("role")
+        description = window.get("series_description")
+        existing = next(
+            (
+                item
+                for item in sequences
+                if item["role"] == role and item["seriesDescription"] == description
+            ),
+            None,
+        )
+        if existing is None:
+            sequences.append(
+                {"role": role, "seriesDescription": description, "windows": 1}
+            )
+        else:
+            existing["windows"] += 1
+    haystack = " ".join(
+        str(item["seriesDescription"] or "").lower() for item in sequences
+    )
+    sides = [
+        side
+        for side, markers in LATERALITY_MARKERS.items()
+        if any(marker in haystack for marker in markers)
+    ]
+    return {
+        "run": lock.get("run"),
+        "outputSchema": lock.get("schema_version"),
+        "bodyRegion": (run_plan or {}).get("body_region"),
+        "profile": (run_plan or {}).get("profile"),
+        "coverage": lock.get("coverage") or {},
+        "windowCount": lock.get("window_count"),
+        "seriesIntegrations": lock.get("series_integrations") or [],
+        "sequences": sequences,
+        "laterality": sides[0] if len(sides) == 1 else "indeterminate",
+        "lateralitySource": "series_description",
+        "radiologyReportUsed": bool((run_plan or {}).get("radiology_report_used")),
+        "windowEvidenceSummary": lock.get("evidence_traceability") or {},
+    }
+
+
 def evidence_summary_from_multiplanar_provenance(
     provenance: dict[str, Any],
 ) -> dict[str, Any]:
@@ -133,6 +193,7 @@ def build_viewer_bundle(
     run_plan: dict[str, Any] | None = None,
     export_images: bool = True,
     evidence_summaries: dict[str, dict[str, Any]] | None = None,
+    study: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble one bundle per model without merging models together.
 
@@ -226,6 +287,7 @@ def build_viewer_bundle(
     bundle = {
         "schema_version": 1,
         "generated_at": utc_now(),
+        "study": study or {},
         "non_diagnostic": True,
         "independent_models": True,
         "no_shared_verdict": True,

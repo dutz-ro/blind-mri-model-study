@@ -1,0 +1,312 @@
+{
+  "meta": {
+    "code": "fr",
+    "htmlLang": "fr",
+    "name": "Français",
+    "dir": "ltr"
+  },
+  "app": {
+    "brand": "RAPPORT PRIVÉ",
+    "privacyPill": "Tailnet uniquement",
+    "nav": {
+      "label": "Navigation principale",
+      "findings": "Constatations",
+      "report": "Compte rendu",
+      "options": "Points à discuter"
+    },
+    "language": {
+      "label": "Langue",
+      "aria": "Choisir la langue de l'interface"
+    },
+    "footer": {
+      "disclaimer": "Ni dispositif médical, ni diagnostic, ni avis médical.",
+      "access": "Accès via Tailscale"
+    },
+    "loading": "Chargement des données de l'étude…",
+    "loadError": "Impossible de charger report-bundle.json. Générez-le avec « mristudy viewer-bundle » et placez-le à côté de cette page."
+  },
+  "index": {
+    "title": "Rapport exploratoire privé | Constatations",
+    "eyebrow": "Étude exploratoire, non diagnostique",
+    "heading": "Constatations indépendantes.",
+    "headingAccent": "Aucune conclusion commune.",
+    "lede": "Chaque modèle est présenté séparément. Les résultats ne sont jamais fusionnés en un verdict unique.",
+    "viewToggle": {
+      "label": "Niveau d'explication",
+      "plain": "Langage courant",
+      "clinical": "Pour le médecin"
+    },
+    "coverage": {
+      "title": "Couverture",
+      "slices": "coupes analysées",
+      "coverage": "Couverture",
+      "windows": "Fenêtres",
+      "note": "L'appartenance à une fenêtre ne fait pas à elle seule d'une image une preuve individuelle."
+    },
+    "findingsHeading": "Ce que le modèle a rapporté",
+    "findingsNote": "Chaque constatation est affichée intégralement, y compris celles sans preuve exploitable, qui sont signalées comme telles.",
+    "noFindings": "Le modèle n'a rapporté aucune constatation.",
+    "evidenceButton": "Ouvrir les images de la constatation",
+    "evidenceButtonHint": "appui, contexte et contre-preuves",
+    "limitationsHeading": "Limites déclarées par le modèle",
+    "globalLimitationsHeading": "Limites globales",
+    "modelTextBadge": "texte du modèle (EN), non traduit",
+    "readingNote": {
+      "eyebrow": "Comment lire les images",
+      "heading": "L'image illustre le texte du modèle. Elle ne valide pas l'anatomie.",
+      "body": "Il n'existe ni coordonnées ni segmentations validées. Les images sont les coupes citées par le modèle, non des localisations confirmées radiologiquement."
+    },
+    "legend": {
+      "supporting": "appui",
+      "context": "contexte",
+      "counter": "contre-preuve",
+      "unverified": "provenance non confirmée"
+    }
+  },
+  "dialog": {
+    "eyebrow": "Preuves",
+    "title": "Galerie d'images",
+    "close": "Fermer",
+    "warning": "Ces images sont les coupes citées par le modèle. Ce ne sont ni des coordonnées fournies par le modèle, ni des segmentations, ni une confirmation radiologique.",
+    "imageAlt": "Coupe IRM anonymisée",
+    "meta": {
+      "exportId": "Identifiant",
+      "role": "Rôle",
+      "series": "Série",
+      "index": "Position géométrique",
+      "windows": "Fenêtres",
+      "description": "Description du modèle"
+    },
+    "zoomIn": "Agrandir",
+    "zoomOut": "Réduire",
+    "noEvidence": "Cette constatation ne cite aucune image."
+  },
+  "vascular": {
+    "heading": "Zone vasculaire",
+    "panelHeading": "Zone vasculaire des constatations",
+    "panelLede": "La zone vasculaire est une estimation anatomique déduite de la position par rapport au bord méniscocapsulaire. Ce n'est pas une mesure du flux sanguin.",
+    "zoneLabel": "Zone estimée",
+    "basisLabel": "Base",
+    "confidenceLabel": "Confiance",
+    "notObserved": "La vascularisation n'a pas été observée directement.",
+    "notRepairability": "La zone ne détermine pas la réparabilité et ne fonde aucune recommandation thérapeutique.",
+    "distribution": "Répartition par constatation",
+    "summary": {
+      "allSame": "Les {total} constatations sont toutes estimées en zone {zone}.",
+      "mixed": "Les constatations sont estimées dans plusieurs zones."
+    },
+    "interpretation": {
+      "red_red": "Zone conventionnellement considérée comme bien vascularisée.",
+      "red_white": "Zone conventionnellement considérée comme partiellement vascularisée.",
+      "white_white": "Zone conventionnellement considérée comme peu ou non vascularisée.",
+      "junctional": "Zone de transition entre territoires vasculaires.",
+      "indeterminate": "Le territoire vasculaire n'a pas pu être estimé."
+    }
+  },
+  "report": {
+    "title": "Compte rendu exploratoire",
+    "eyebrow": "Document généré à partir des données de l'étude",
+    "heading": "Compte rendu structuré",
+    "lede": "Texte composé de façon déterministe à partir des champs structurés de l'étude. Il ne contient aucune prose générée par le modèle.",
+    "header": {
+      "heading": "Examen",
+      "examination": "Examen",
+      "examinationValue": "IRM du genou, analyse exploratoire des ménisques",
+      "side": "Côté",
+      "sideNote": "déduit de la description des séries",
+      "sequences": "Séquences analysées",
+      "coverage": "Couverture",
+      "coverageValue": "{analyzed} coupes sur {total} ({percent} %), réparties en {windows} fenêtres",
+      "purpose": "Finalité",
+      "purposeValue": "Exploratoire, non diagnostique",
+      "priorReport": "Compte rendu radiologique antérieur",
+      "priorReportValue": "non utilisé ; analyse en aveugle",
+      "run": "Identifiant d'exécution"
+    },
+    "results": {
+      "heading": "RÉSULTATS",
+      "medial": "Ménisque interne",
+      "lateral": "Ménisque externe",
+      "indeterminateMeniscus": "Ménisque indéterminé",
+      "noFindingsFor": "Aucune constatation rapportée pour ce ménisque.",
+      "segmentIntro": "{segment} :",
+      "tearAbsent": "aucune fissuration identifiée",
+      "tearSuspected": "fissuration suspectée",
+      "tearProbable": "fissuration probable",
+      "tearIndeterminate": "statut de fissuration indéterminé",
+      "tearNotEvaluable": "segment non évaluable sur les images disponibles",
+      "pattern": "aspect {pattern}",
+      "orientation": "orientation {orientation}",
+      "surfaceIntact": "sans extension aux surfaces articulaires ni au bord libre",
+      "surfaceDetail": "extension : supérieure ({superior}), inférieure ({inferior}), bord libre ({freeEdge})",
+      "capsularIntact": "sans désinsertion méniscocapsulaire ni extension périphérique",
+      "capsularDetail": "rapport capsulaire : désinsertion ({separation}), extension périphérique ({extension})",
+      "distance": "distance estimée au bord méniscocapsulaire : {value} mm ({method})",
+      "cystAbsent": "pas de kyste méniscal",
+      "cystPresent": "kyste méniscal présent",
+      "cystIndeterminate": "kyste méniscal indéterminé",
+      "rootAbsent": "pas d'atteinte de la racine",
+      "rootPresent": "atteinte de la racine",
+      "rootIndeterminate": "atteinte de la racine indéterminée",
+      "fragmentAbsent": "sans fragment déplacé, languette ni anse de seau",
+      "fragmentDetail": "stabilité : fragment déplacé ({displaced}), languette ({flap}), anse de seau ({bucket})",
+      "tissue": "tissu ({tissue}), chronicité ({chronicity})",
+      "vascular": "zone vasculaire estimée {zone} ({basis}), sans observation directe de la vascularisation",
+      "evidence": "appuyée par {count} coupes citées",
+      "evidenceNone": "aucune coupe citée",
+      "confidence": "confiance {confidence}"
+    },
+    "notAssessed": {
+      "heading": "NON ÉVALUÉ DANS CETTE ÉTUDE",
+      "lede": "L'étude n'a analysé que l'aspect des ménisques. Les structures ci-dessous n'ont pas été analysées ; l'absence de mention ne signifie pas leur normalité.",
+      "items": [
+        "Ligaments croisés antérieur et postérieur",
+        "Ligaments collatéraux médial et latéral",
+        "Cartilages fémoro-tibiaux et fémoro-patellaire",
+        "Épanchement articulaire et récessus synoviaux",
+        "Kyste poplité (de Baker) et bourses séreuses",
+        "Appareil extenseur, tendon rotulien et rétinaculum",
+        "Os trabéculaire, œdème médullaire et lésions ostéochondrales",
+        "Graisse de Hoffa et plica synoviale"
+      ]
+    },
+    "conclusion": {
+      "heading": "CONCLUSION",
+      "noTear": "L'analyse exploratoire des ménisques du genou {side} n'a pas mis en évidence de fissuration méniscale sur les coupes analysées.",
+      "someTear": "L'analyse exploratoire des ménisques du genou {side} a identifié des constatations avec fissuration suspectée ({count}).",
+      "indeterminate": "Constatations restant indéterminées en raison de limites de résolution, de plan ou de fenêtre : {count}.",
+      "vascular": "Les zones vasculaires rapportées sont des estimations anatomiques : {summary}",
+      "traceability": "Traçabilité : {verified} constatations sur {total} au niveau des fenêtres disposent d'une preuve vérifiée dans leur propre fenêtre ({percent} %), sans citation hors du plan approuvé.",
+      "boundary": "Ce document ne constitue pas un diagnostic, ne détermine pas la réparabilité et ne formule aucune recommandation thérapeutique."
+    },
+    "print": "Imprimer",
+    "footerNote": "Généré le {timestamp} à partir de l'exécution {run}."
+  },
+  "options": {
+    "title": "Points à discuter avec un médecin",
+    "eyebrow": "Matériel pédagogique",
+    "heading": "Ce n'est pas un avis médical.",
+    "lede": "La liste ci-dessous contient des questions à poser à un médecin. Ce n'est pas une recommandation de traitement et elle ne découle pas automatiquement des résultats de l'étude.",
+    "items": [
+      {
+        "title": "Ce que cette étude montre et ne montre pas",
+        "body": "L'étude n'a analysé que l'aspect des ménisques sur les images fournies. Elle n'a évalué ni les ligaments, ni le cartilage, ni l'épanchement, ni l'os."
+      },
+      {
+        "title": "Le degré de certitude des constatations",
+        "body": "Chaque constatation porte un niveau de confiance déclaré par le modèle et une étiquette de traçabilité indiquant si elle repose sur des coupes vérifiées."
+      },
+      {
+        "title": "Ce que signifie la zone vasculaire",
+        "body": "C'est une estimation anatomique de la position par rapport au bord méniscocapsulaire, non une mesure de la circulation sanguine. À elle seule, elle ne décide de rien."
+      },
+      {
+        "title": "Ce qu'un spécialiste pourrait préciser",
+        "body": "La corrélation avec l'examen clinique, avec les symptômes et, le cas échéant, avec des séquences ou des plans complémentaires."
+      }
+    ]
+  },
+  "clinical": {
+    "field": {
+      "meniscus": "Ménisque",
+      "segment": "Segment",
+      "tear_status": "Statut de fissuration",
+      "tear_pattern": "Aspect",
+      "orientation": "Orientation",
+      "confidence": "Confiance",
+      "vascular_zone_estimate": "Zone vasculaire",
+      "capsular_relation": "Rapport capsulaire",
+      "surface_extension": "Extension aux surfaces",
+      "stability_features": "Éléments de stabilité",
+      "healing_context": "Contexte tissulaire",
+      "imaging_factors_for_specialist_review": "Éléments d'imagerie pour le spécialiste",
+      "zone": "Zone",
+      "basis": "Base",
+      "directly_observed_vascularity": "Vascularisation observée directement",
+      "distance_mm_estimate": "Distance estimée (mm)",
+      "measurement_method": "Méthode de mesure",
+      "peripheral_extension": "Extension périphérique",
+      "meniscocapsular_separation": "Désinsertion méniscocapsulaire",
+      "superior": "Surface supérieure",
+      "inferior": "Surface inférieure",
+      "free_edge": "Bord libre",
+      "displaced_fragment": "Fragment déplacé",
+      "flap": "Languette",
+      "bucket_handle_pattern": "Anse de seau",
+      "imaging_signs_of_mechanical_obstruction": "Signes de blocage mécanique",
+      "tissue_quality_imaging_estimate": "Qualité tissulaire estimée",
+      "chronicity_imaging_estimate": "Chronicité estimée",
+      "extrusion_mm_estimate": "Extrusion estimée (mm)",
+      "parameniscal_cyst": "Kyste méniscal",
+      "root_involvement": "Atteinte de la racine"
+    },
+    "value": {
+      "medial": "interne",
+      "lateral": "externe",
+      "anterior_horn": "corne antérieure",
+      "body": "segment moyen",
+      "posterior_horn": "corne postérieure",
+      "anterior_root": "racine antérieure",
+      "posterior_root": "racine postérieure",
+      "multiple_segments": "segments multiples",
+      "absent": "absent",
+      "suspected": "suspecté",
+      "probable": "probable",
+      "not_evaluable": "non évaluable",
+      "none": "aucun",
+      "horizontal": "horizontal",
+      "vertical_longitudinal": "vertical longitudinal",
+      "radial": "radiaire",
+      "complex": "complexe",
+      "flap": "languette",
+      "bucket_handle": "anse de seau",
+      "root_tear": "désinsertion de la racine",
+      "meniscocapsular": "méniscocapsulaire",
+      "other": "autre",
+      "vertical": "vertical",
+      "oblique": "oblique",
+      "multidirectional": "multidirectionnel",
+      "not_applicable": "sans objet",
+      "low": "faible",
+      "medium": "moyenne",
+      "high": "élevée",
+      "red_red": "rouge–rouge",
+      "red_white": "rouge–blanc",
+      "white_white": "blanc–blanc",
+      "junctional": "jonctionnelle",
+      "estimated_from_meniscocapsular_distance": "estimée à partir de la distance méniscocapsulaire",
+      "estimated_from_peripheral_location": "estimée à partir de la position périphérique",
+      "insufficient_anatomic_resolution": "résolution anatomique insuffisante",
+      "geometry_calibrated": "géométrie calibrée",
+      "visual_estimate": "estimation visuelle",
+      "not_measurable": "non mesurable",
+      "present": "présent",
+      "preserved_appearing": "aspect préservé",
+      "degenerative_appearing": "aspect dégénératif",
+      "acute_appearing": "aspect aigu",
+      "chronic_appearing": "aspect chronique",
+      "mixed": "mixte",
+      "supporting": "appui",
+      "counter": "contre-preuve",
+      "context": "contexte",
+      "indeterminate": "indéterminé",
+      "true": "oui",
+      "false": "non",
+      "left": "gauche",
+      "right": "droit"
+    },
+    "status": {
+      "verified": "preuve vérifiée",
+      "recovered": "preuve récupérée",
+      "cross_window": "preuve d'une fenêtre voisine",
+      "unverified": "provenance non confirmée"
+    },
+    "role": {
+      "primary-volume": "volume principal",
+      "sagittal-meniscus": "sagittal méniscal",
+      "coronal-confirmation": "confirmation coronale",
+      "axial-confirmation": "confirmation axiale",
+      "anatomy-correlation": "corrélation anatomique"
+    }
+  }
+}

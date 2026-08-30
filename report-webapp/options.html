@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title data-i18n-title="options.title">Subiecte de discutat</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><span data-i18n="app.brand"></span></a>
+    <nav data-i18n-attr="aria-label:app.nav.label">
+      <a href="index.html" data-i18n="app.nav.findings"></a>
+      <a href="report.html" data-i18n="app.nav.report"></a>
+      <a class="active" href="options.html" data-i18n="app.nav.options"></a>
+    </nav>
+    <div class="topbar-tools">
+      <div class="language-picker" data-language-selector></div>
+      <span class="privacy-pill" data-i18n="app.privacyPill"></span>
+    </div>
+  </header>
+
+  <p class="load-status" data-load-status hidden></p>
+
+  <main class="shell section">
+    <p class="eyebrow" data-i18n="options.eyebrow"></p>
+    <h1 data-i18n="options.heading"></h1>
+    <p class="lede" data-i18n="options.lede"></p>
+    <div id="options-list" class="options-grid"></div>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <strong data-i18n="app.brand"></strong>
+      <p data-i18n="app.footer.disclaimer"></p>
+      <span data-i18n="app.footer.access"></span>
+    </div>
+  </footer>
+
+  <script type="module" src="js/options.js"></script>
+</body>
+</html>

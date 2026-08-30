@@ -1,0 +1,312 @@
+{
+  "meta": {
+    "code": "en",
+    "htmlLang": "en",
+    "name": "English",
+    "dir": "ltr"
+  },
+  "app": {
+    "brand": "PRIVATE REPORT",
+    "privacyPill": "Tailnet only",
+    "nav": {
+      "label": "Main navigation",
+      "findings": "Findings",
+      "report": "Radiology report",
+      "options": "Topics to discuss"
+    },
+    "language": {
+      "label": "Language",
+      "aria": "Choose the interface language"
+    },
+    "footer": {
+      "disclaimer": "Not a medical device, a diagnosis, or medical advice.",
+      "access": "Served over Tailscale"
+    },
+    "loading": "Loading study data…",
+    "loadError": "report-bundle.json could not be loaded. Generate it with “mristudy viewer-bundle” and place it next to this page."
+  },
+  "index": {
+    "title": "Private exploratory report | Findings",
+    "eyebrow": "Exploratory, non-diagnostic study",
+    "heading": "Independent findings.",
+    "headingAccent": "No shared verdict.",
+    "lede": "Each model is presented on its own. Results are never merged into a single verdict.",
+    "viewToggle": {
+      "label": "Level of explanation",
+      "plain": "Plain language",
+      "clinical": "For clinicians"
+    },
+    "coverage": {
+      "title": "Coverage",
+      "slices": "slices analysed",
+      "coverage": "Coverage",
+      "windows": "Windows",
+      "note": "Belonging to a window does not by itself make an image individual evidence."
+    },
+    "findingsHeading": "What the model reported",
+    "findingsNote": "Every finding is shown in full, including those without usable evidence, which are labelled as such.",
+    "noFindings": "The model reported no findings.",
+    "evidenceButton": "Open the images for this finding",
+    "evidenceButtonHint": "supporting, context and counter evidence",
+    "limitationsHeading": "Limitations stated by the model",
+    "globalLimitationsHeading": "Global limitations",
+    "modelTextBadge": "model text (EN), untranslated",
+    "readingNote": {
+      "eyebrow": "How to read the images",
+      "heading": "The image explains the model's text. It does not validate anatomy.",
+      "body": "There are no validated coordinates or segmentations. The images are the slices the model cited, not radiologically confirmed locations."
+    },
+    "legend": {
+      "supporting": "supporting",
+      "context": "context",
+      "counter": "counter evidence",
+      "unverified": "unconfirmed provenance"
+    }
+  },
+  "dialog": {
+    "eyebrow": "Evidence",
+    "title": "Image gallery",
+    "close": "Close",
+    "warning": "These are the slices the model cited. They are not model-provided coordinates, segmentations, or radiological confirmation.",
+    "imageAlt": "De-identified MRI slice",
+    "meta": {
+      "exportId": "Identifier",
+      "role": "Role",
+      "series": "Series",
+      "index": "Geometric position",
+      "windows": "Windows",
+      "description": "Model description"
+    },
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "noEvidence": "This finding cites no image."
+  },
+  "vascular": {
+    "heading": "Vascular zone",
+    "panelHeading": "Vascular zone of the findings",
+    "panelLede": "The vascular zone is an anatomical estimate derived from the position relative to the meniscocapsular margin. It is not a measurement of blood flow.",
+    "zoneLabel": "Estimated zone",
+    "basisLabel": "Basis",
+    "confidenceLabel": "Confidence",
+    "notObserved": "Vascularity was not directly observed.",
+    "notRepairability": "The zone does not determine repairability and does not support a treatment recommendation.",
+    "distribution": "Distribution across findings",
+    "summary": {
+      "allSame": "All {total} findings are estimated in the {zone} zone.",
+      "mixed": "The findings are estimated across several zones."
+    },
+    "interpretation": {
+      "red_red": "Conventionally regarded as a well-vascularised zone.",
+      "red_white": "Conventionally regarded as a partially vascularised zone.",
+      "white_white": "Conventionally regarded as a poorly vascularised or avascular zone.",
+      "junctional": "A transition zone between vascular territories.",
+      "indeterminate": "The vascular territory could not be estimated."
+    }
+  },
+  "report": {
+    "title": "Exploratory radiology report",
+    "eyebrow": "Document generated from the study data",
+    "heading": "Structured report",
+    "lede": "Text composed deterministically from the study's structured fields. It contains no model-generated prose.",
+    "header": {
+      "heading": "Examination",
+      "examination": "Examination",
+      "examinationValue": "Knee MRI, exploratory analysis of the menisci",
+      "side": "Side",
+      "sideNote": "derived from the series description",
+      "sequences": "Sequences analysed",
+      "coverage": "Coverage",
+      "coverageValue": "{analyzed} of {total} slices ({percent}%), across {windows} windows",
+      "purpose": "Purpose",
+      "purposeValue": "Exploratory, non-diagnostic",
+      "priorReport": "Prior radiology report",
+      "priorReportValue": "not used; blind analysis",
+      "run": "Run identifier"
+    },
+    "results": {
+      "heading": "RESULTS",
+      "medial": "Medial meniscus",
+      "lateral": "Lateral meniscus",
+      "indeterminateMeniscus": "Undetermined meniscus",
+      "noFindingsFor": "No finding was reported for this meniscus.",
+      "segmentIntro": "{segment}:",
+      "tearAbsent": "no tear was identified",
+      "tearSuspected": "a tear is suspected",
+      "tearProbable": "a tear is probable",
+      "tearIndeterminate": "tear status remains undetermined",
+      "tearNotEvaluable": "the segment is not evaluable on the available images",
+      "pattern": "{pattern} pattern",
+      "orientation": "{orientation} orientation",
+      "surfaceIntact": "no extension to the articular surfaces or the free edge",
+      "surfaceDetail": "extension: superior ({superior}), inferior ({inferior}), free edge ({freeEdge})",
+      "capsularIntact": "no meniscocapsular separation and no peripheral extension",
+      "capsularDetail": "capsular relation: separation ({separation}), peripheral extension ({extension})",
+      "distance": "estimated distance to the meniscocapsular margin: {value} mm ({method})",
+      "cystAbsent": "no parameniscal cyst",
+      "cystPresent": "parameniscal cyst present",
+      "cystIndeterminate": "parameniscal cyst undetermined",
+      "rootAbsent": "no root involvement",
+      "rootPresent": "root involvement",
+      "rootIndeterminate": "root involvement undetermined",
+      "fragmentAbsent": "no displaced fragment, flap, or bucket-handle appearance",
+      "fragmentDetail": "stability: displaced fragment ({displaced}), flap ({flap}), bucket handle ({bucket})",
+      "tissue": "tissue ({tissue}), chronicity ({chronicity})",
+      "vascular": "estimated {zone} vascular zone ({basis}), without direct observation of vascularity",
+      "evidence": "supported by {count} cited slices",
+      "evidenceNone": "no cited slices",
+      "confidence": "{confidence} confidence"
+    },
+    "notAssessed": {
+      "heading": "NOT ASSESSED IN THIS STUDY",
+      "lede": "The study analysed the appearance of the menisci only. The structures below were not analysed; the absence of a statement does not mean they are normal.",
+      "items": [
+        "Anterior and posterior cruciate ligaments",
+        "Medial and lateral collateral ligaments",
+        "Femorotibial and patellofemoral cartilage",
+        "Joint effusion and synovial recesses",
+        "Popliteal (Baker) cyst and bursae",
+        "Extensor mechanism, patellar tendon and retinaculum",
+        "Trabecular bone, marrow oedema and osteochondral lesions",
+        "Hoffa's fat pad and synovial plica"
+      ]
+    },
+    "conclusion": {
+      "heading": "CONCLUSION",
+      "noTear": "Exploratory analysis of the menisci of the {side} knee demonstrated no meniscal tear on the slices analysed.",
+      "someTear": "Exploratory analysis of the menisci of the {side} knee identified findings with a suspected tear ({count}).",
+      "indeterminate": "Findings that remain undetermined because of resolution, plane or window limitations: {count}.",
+      "vascular": "The vascular zones reported are anatomical estimates: {summary}",
+      "traceability": "Traceability: {verified} of {total} window-level findings carry verified evidence from their own window ({percent}%), with no citation outside the approved plan.",
+      "boundary": "This document is not a diagnosis, does not determine repairability, and makes no treatment recommendation."
+    },
+    "print": "Print",
+    "footerNote": "Generated at {timestamp} from run {run}."
+  },
+  "options": {
+    "title": "Topics to discuss with a clinician",
+    "eyebrow": "Educational material",
+    "heading": "Not medical advice.",
+    "lede": "The list below contains questions you may raise with a clinician. It is not a treatment recommendation and does not follow automatically from the study results.",
+    "items": [
+      {
+        "title": "What this study does and does not show",
+        "body": "The study analysed only the appearance of the menisci on the supplied images. It did not assess the ligaments, cartilage, effusion, or bone."
+      },
+      {
+        "title": "How certain the findings are",
+        "body": "Each finding carries a confidence level stated by the model and a traceability label showing whether it rests on verified slices."
+      },
+      {
+        "title": "What the vascular zone means",
+        "body": "It is an anatomical estimate of the position relative to the meniscocapsular margin, not a measurement of blood supply. On its own it decides nothing."
+      },
+      {
+        "title": "What a specialist could clarify",
+        "body": "Correlation with the clinical examination, with symptoms, and where appropriate with additional sequences or planes."
+      }
+    ]
+  },
+  "clinical": {
+    "field": {
+      "meniscus": "Meniscus",
+      "segment": "Segment",
+      "tear_status": "Tear status",
+      "tear_pattern": "Pattern",
+      "orientation": "Orientation",
+      "confidence": "Confidence",
+      "vascular_zone_estimate": "Vascular zone",
+      "capsular_relation": "Capsular relation",
+      "surface_extension": "Surface extension",
+      "stability_features": "Stability features",
+      "healing_context": "Tissue context",
+      "imaging_factors_for_specialist_review": "Imaging factors for specialist review",
+      "zone": "Zone",
+      "basis": "Basis",
+      "directly_observed_vascularity": "Directly observed vascularity",
+      "distance_mm_estimate": "Estimated distance (mm)",
+      "measurement_method": "Measurement method",
+      "peripheral_extension": "Peripheral extension",
+      "meniscocapsular_separation": "Meniscocapsular separation",
+      "superior": "Superior surface",
+      "inferior": "Inferior surface",
+      "free_edge": "Free edge",
+      "displaced_fragment": "Displaced fragment",
+      "flap": "Flap",
+      "bucket_handle_pattern": "Bucket-handle appearance",
+      "imaging_signs_of_mechanical_obstruction": "Signs of mechanical obstruction",
+      "tissue_quality_imaging_estimate": "Estimated tissue quality",
+      "chronicity_imaging_estimate": "Estimated chronicity",
+      "extrusion_mm_estimate": "Estimated extrusion (mm)",
+      "parameniscal_cyst": "Parameniscal cyst",
+      "root_involvement": "Root involvement"
+    },
+    "value": {
+      "medial": "medial",
+      "lateral": "lateral",
+      "anterior_horn": "anterior horn",
+      "body": "body",
+      "posterior_horn": "posterior horn",
+      "anterior_root": "anterior root",
+      "posterior_root": "posterior root",
+      "multiple_segments": "multiple segments",
+      "absent": "absent",
+      "suspected": "suspected",
+      "probable": "probable",
+      "not_evaluable": "not evaluable",
+      "none": "none",
+      "horizontal": "horizontal",
+      "vertical_longitudinal": "vertical longitudinal",
+      "radial": "radial",
+      "complex": "complex",
+      "flap": "flap",
+      "bucket_handle": "bucket handle",
+      "root_tear": "root tear",
+      "meniscocapsular": "meniscocapsular",
+      "other": "other",
+      "vertical": "vertical",
+      "oblique": "oblique",
+      "multidirectional": "multidirectional",
+      "not_applicable": "not applicable",
+      "low": "low",
+      "medium": "medium",
+      "high": "high",
+      "red_red": "red–red",
+      "red_white": "red–white",
+      "white_white": "white–white",
+      "junctional": "junctional",
+      "estimated_from_meniscocapsular_distance": "estimated from the meniscocapsular distance",
+      "estimated_from_peripheral_location": "estimated from the peripheral location",
+      "insufficient_anatomic_resolution": "insufficient anatomical resolution",
+      "geometry_calibrated": "calibrated geometry",
+      "visual_estimate": "visual estimate",
+      "not_measurable": "not measurable",
+      "present": "present",
+      "preserved_appearing": "preserved appearance",
+      "degenerative_appearing": "degenerative appearance",
+      "acute_appearing": "acute appearance",
+      "chronic_appearing": "chronic appearance",
+      "mixed": "mixed",
+      "supporting": "supporting",
+      "counter": "counter evidence",
+      "context": "context",
+      "indeterminate": "indeterminate",
+      "true": "yes",
+      "false": "no",
+      "left": "left",
+      "right": "right"
+    },
+    "status": {
+      "verified": "verified evidence",
+      "recovered": "recovered evidence",
+      "cross_window": "evidence from a neighbouring window",
+      "unverified": "unconfirmed provenance"
+    },
+    "role": {
+      "primary-volume": "primary volume",
+      "sagittal-meniscus": "sagittal meniscal",
+      "coronal-confirmation": "coronal confirmation",
+      "axial-confirmation": "axial confirmation",
+      "anatomy-correlation": "anatomical correlation"
+    }
+  }
+}

@@ -1,0 +1,312 @@
+{
+  "meta": {
+    "code": "ro",
+    "htmlLang": "ro",
+    "name": "Română",
+    "dir": "ltr"
+  },
+  "app": {
+    "brand": "RAPORT PRIVAT",
+    "privacyPill": "Doar Tailnet",
+    "nav": {
+      "label": "Navigație principală",
+      "findings": "Constatări",
+      "report": "Raport radiologic",
+      "options": "Opțiuni de discutat"
+    },
+    "language": {
+      "label": "Limbă",
+      "aria": "Alege limba interfeței"
+    },
+    "footer": {
+      "disclaimer": "Nu este dispozitiv medical, diagnostic sau sfat medical.",
+      "access": "Acces prin Tailscale"
+    },
+    "loading": "Se încarcă datele studiului…",
+    "loadError": "Nu s-a putut încărca report-bundle.json. Generează-l cu „mristudy viewer-bundle” și copiază-l lângă această pagină."
+  },
+  "index": {
+    "title": "Raport exploratoriu privat | Constatări",
+    "eyebrow": "Studiu exploratoriu, non-diagnostic",
+    "heading": "Constatări independente.",
+    "headingAccent": "Fără concluzie comună.",
+    "lede": "Fiecare model este prezentat separat. Rezultatele nu se combină într-un verdict unic.",
+    "viewToggle": {
+      "label": "Nivelul explicației",
+      "plain": "Pe înțelesul tuturor",
+      "clinical": "Pentru medic"
+    },
+    "coverage": {
+      "title": "Acoperire",
+      "slices": "secțiuni analizate",
+      "coverage": "Acoperire",
+      "windows": "Ferestre",
+      "note": "Apartenența la o fereastră nu transformă automat o imagine în dovadă individuală."
+    },
+    "findingsHeading": "Ce a raportat modelul",
+    "findingsNote": "Fiecare constatare este afișată integral, inclusiv cele fără dovadă utilizabilă, etichetate ca atare.",
+    "noFindings": "Modelul nu a raportat nicio constatare.",
+    "evidenceButton": "Deschide imaginile constatării",
+    "evidenceButtonHint": "susținere, context și contra-dovezi",
+    "limitationsHeading": "Limitări declarate de model",
+    "globalLimitationsHeading": "Limitări globale",
+    "modelTextBadge": "text model (EN), netradus",
+    "readingNote": {
+      "eyebrow": "Cum se citesc marcajele",
+      "heading": "Imaginea explică textul modelului. Nu validează anatomia.",
+      "body": "Nu există coordonate sau segmentări validate. Imaginile sunt secțiunile citate de model, nu localizări confirmate radiologic."
+    },
+    "legend": {
+      "supporting": "susținere",
+      "context": "context",
+      "counter": "contra-dovadă",
+      "unverified": "proveniență neconfirmată"
+    }
+  },
+  "dialog": {
+    "eyebrow": "Dovezi",
+    "title": "Galerie de imagini",
+    "close": "Închide",
+    "warning": "Imaginile sunt secțiunile citate de model. Nu sunt coordonate furnizate de model, segmentări sau confirmări radiologice.",
+    "imageAlt": "Secțiune IRM anonimizată",
+    "meta": {
+      "exportId": "Identificator",
+      "role": "Rol",
+      "series": "Serie",
+      "index": "Poziție geometrică",
+      "windows": "Ferestre",
+      "description": "Descrierea modelului"
+    },
+    "zoomIn": "Mărește",
+    "zoomOut": "Micșorează",
+    "noEvidence": "Această constatare nu citează nicio imagine."
+  },
+  "vascular": {
+    "heading": "Zona vasculară",
+    "panelHeading": "Zona vasculară a constatărilor",
+    "panelLede": "Zona vasculară este o estimare anatomică derivată din poziția față de marginea meniscocapsulară. Nu este o măsurătoare a fluxului sanguin.",
+    "zoneLabel": "Zonă estimată",
+    "basisLabel": "Bază",
+    "confidenceLabel": "Încredere",
+    "notObserved": "Vascularizația nu a fost observată direct.",
+    "notRepairability": "Zona nu determină reparabilitatea și nu susține o recomandare de tratament.",
+    "distribution": "Distribuție pe constatări",
+    "summary": {
+      "allSame": "Toate cele {total} constatări sunt estimate în zona {zone}.",
+      "mixed": "Constatările sunt estimate în mai multe zone."
+    },
+    "interpretation": {
+      "red_red": "Zonă considerată convențional bine vascularizată.",
+      "red_white": "Zonă considerată convențional parțial vascularizată.",
+      "white_white": "Zonă considerată convențional slab sau deloc vascularizată.",
+      "junctional": "Zonă de tranziție între teritorii vasculare.",
+      "indeterminate": "Teritoriul vascular nu a putut fi estimat."
+    }
+  },
+  "report": {
+    "title": "Raport radiologic exploratoriu",
+    "eyebrow": "Document generat din datele studiului",
+    "heading": "Raport structurat",
+    "lede": "Text compus determinist din câmpurile structurate ale studiului. Nu conține proză generată de model.",
+    "header": {
+      "heading": "Examinare",
+      "examination": "Examinare",
+      "examinationValue": "IRM de genunchi, analiză exploratorie a meniscurilor",
+      "side": "Lateralitate",
+      "sideNote": "dedusă din descrierea seriilor",
+      "sequences": "Secvențe analizate",
+      "coverage": "Acoperire",
+      "coverageValue": "{analyzed} din {total} secțiuni ({percent}%), în {windows} ferestre",
+      "purpose": "Scop",
+      "purposeValue": "Exploratoriu, non-diagnostic",
+      "priorReport": "Raport radiologic anterior",
+      "priorReportValue": "neutilizat; analiză oarbă",
+      "run": "Identificator rulare"
+    },
+    "results": {
+      "heading": "REZULTATE",
+      "medial": "Menisc medial",
+      "lateral": "Menisc lateral",
+      "indeterminateMeniscus": "Menisc nedeterminat",
+      "noFindingsFor": "Nicio constatare raportată pentru acest menisc.",
+      "segmentIntro": "{segment}:",
+      "tearAbsent": "nu s-a identificat fisurare",
+      "tearSuspected": "fisurare suspectată",
+      "tearProbable": "fisurare probabilă",
+      "tearIndeterminate": "statusul fisurării rămâne nedeterminat",
+      "tearNotEvaluable": "segment neevaluabil pe imaginile disponibile",
+      "pattern": "tipar {pattern}",
+      "orientation": "orientare {orientation}",
+      "surfaceIntact": "fără extensie la suprafețele articulare sau la marginea liberă",
+      "surfaceDetail": "extensie: superior ({superior}), inferior ({inferior}), margine liberă ({freeEdge})",
+      "capsularIntact": "fără separare meniscocapsulară și fără extensie periferică",
+      "capsularDetail": "relație capsulară: separare ({separation}), extensie periferică ({extension})",
+      "distance": "distanță estimată până la marginea meniscocapsulară: {value} mm ({method})",
+      "cystAbsent": "fără chist parameniscal",
+      "cystPresent": "chist parameniscal prezent",
+      "cystIndeterminate": "chist parameniscal nedeterminat",
+      "rootAbsent": "fără implicarea rădăcinii",
+      "rootPresent": "implicare a rădăcinii",
+      "rootIndeterminate": "implicarea rădăcinii nedeterminată",
+      "fragmentAbsent": "fără fragment deplasat, lambou sau aspect de toartă de coș",
+      "fragmentDetail": "stabilitate: fragment deplasat ({displaced}), lambou ({flap}), toartă de coș ({bucket})",
+      "tissue": "țesut ({tissue}), cronicitate ({chronicity})",
+      "vascular": "zonă vasculară estimată {zone} ({basis}), fără observare directă a vascularizației",
+      "evidence": "susținut de {count} secțiuni citate",
+      "evidenceNone": "fără secțiuni citate",
+      "confidence": "încredere {confidence}"
+    },
+    "notAssessed": {
+      "heading": "NEEVALUAT ÎN ACEST STUDIU",
+      "lede": "Studiul a analizat exclusiv aspectul meniscurilor. Structurile de mai jos nu au fost analizate; absența unei mențiuni nu înseamnă normalitate.",
+      "items": [
+        "Ligamente încrucișate anterior și posterior",
+        "Ligamente colaterale medial și lateral",
+        "Cartilaj femuro-tibial și femuro-patelar",
+        "Epanșament articular și recesuri sinoviale",
+        "Chist popliteu (Baker) și burse",
+        "Aparat extensor, tendon rotulian și retinacul",
+        "Os trabecular, edem osos și leziuni osteocondrale",
+        "Grăsimea Hoffa și plica sinovială"
+      ]
+    },
+    "conclusion": {
+      "heading": "CONCLUZIE",
+      "noTear": "Analiza exploratorie a meniscurilor genunchiului {side} nu a demonstrat fisurare meniscală pe secțiunile analizate.",
+      "someTear": "Analiza exploratorie a meniscurilor genunchiului {side} a identificat constatări cu suspiciune de fisurare ({count}).",
+      "indeterminate": "Constatări rămase nedeterminate din cauza limitărilor de rezoluție, plan sau fereastră: {count}.",
+      "vascular": "Zonele vasculare raportate sunt estimări anatomice: {summary}",
+      "traceability": "Trasabilitate: {verified} din {total} constatări la nivel de fereastră au dovadă verificată în fereastra proprie ({percent}%), fără citări din afara planului aprobat.",
+      "boundary": "Documentul nu constituie diagnostic, nu determină reparabilitatea și nu formulează recomandări de tratament."
+    },
+    "print": "Tipărește",
+    "footerNote": "Generat la {timestamp} din rularea {run}."
+  },
+  "options": {
+    "title": "Subiecte de discutat cu medicul",
+    "eyebrow": "Material educațional",
+    "heading": "Nu este sfat medical.",
+    "lede": "Lista de mai jos conține întrebări pe care le poți adresa unui medic. Nu este o recomandare de tratament și nu decurge automat din rezultatele studiului.",
+    "items": [
+      {
+        "title": "Ce arată și ce nu arată acest studiu",
+        "body": "Studiul a analizat doar aspectul meniscurilor pe imaginile furnizate. Nu a evaluat ligamentele, cartilajul, epanșamentul sau osul."
+      },
+      {
+        "title": "Cât de sigure sunt constatările",
+        "body": "Fiecare constatare are un nivel de încredere declarat de model și o etichetă de trasabilitate care arată dacă se sprijină pe secțiuni verificate."
+      },
+      {
+        "title": "Ce înseamnă zona vasculară",
+        "body": "Este o estimare anatomică a poziției față de marginea meniscocapsulară, nu o măsurătoare a circulației sângelui. Nu determină singură nicio decizie."
+      },
+      {
+        "title": "Ce ar putea clarifica un specialist",
+        "body": "Corelarea cu examinarea clinică, cu simptomele și, dacă este cazul, cu secvențe sau planuri suplimentare."
+      }
+    ]
+  },
+  "clinical": {
+    "field": {
+      "meniscus": "Menisc",
+      "segment": "Segment",
+      "tear_status": "Status fisurare",
+      "tear_pattern": "Tipar",
+      "orientation": "Orientare",
+      "confidence": "Încredere",
+      "vascular_zone_estimate": "Zonă vasculară",
+      "capsular_relation": "Relație capsulară",
+      "surface_extension": "Extensie la suprafețe",
+      "stability_features": "Elemente de stabilitate",
+      "healing_context": "Context tisular",
+      "imaging_factors_for_specialist_review": "Factori imagistici pentru specialist",
+      "zone": "Zonă",
+      "basis": "Bază",
+      "directly_observed_vascularity": "Vascularizație observată direct",
+      "distance_mm_estimate": "Distanță estimată (mm)",
+      "measurement_method": "Metodă de măsurare",
+      "peripheral_extension": "Extensie periferică",
+      "meniscocapsular_separation": "Separare meniscocapsulară",
+      "superior": "Suprafață superioară",
+      "inferior": "Suprafață inferioară",
+      "free_edge": "Margine liberă",
+      "displaced_fragment": "Fragment deplasat",
+      "flap": "Lambou",
+      "bucket_handle_pattern": "Aspect de toartă de coș",
+      "imaging_signs_of_mechanical_obstruction": "Semne de blocaj mecanic",
+      "tissue_quality_imaging_estimate": "Calitate tisulară estimată",
+      "chronicity_imaging_estimate": "Cronicitate estimată",
+      "extrusion_mm_estimate": "Extruzie estimată (mm)",
+      "parameniscal_cyst": "Chist parameniscal",
+      "root_involvement": "Implicarea rădăcinii"
+    },
+    "value": {
+      "medial": "medial",
+      "lateral": "lateral",
+      "anterior_horn": "corn anterior",
+      "body": "corp",
+      "posterior_horn": "corn posterior",
+      "anterior_root": "rădăcină anterioară",
+      "posterior_root": "rădăcină posterioară",
+      "multiple_segments": "segmente multiple",
+      "absent": "absent",
+      "suspected": "suspectat",
+      "probable": "probabil",
+      "not_evaluable": "neevaluabil",
+      "none": "niciunul",
+      "horizontal": "orizontal",
+      "vertical_longitudinal": "vertical longitudinal",
+      "radial": "radial",
+      "complex": "complex",
+      "flap": "lambou",
+      "bucket_handle": "toartă de coș",
+      "root_tear": "fisurare de rădăcină",
+      "meniscocapsular": "meniscocapsular",
+      "other": "altul",
+      "vertical": "vertical",
+      "oblique": "oblic",
+      "multidirectional": "multidirecțional",
+      "not_applicable": "nu se aplică",
+      "low": "scăzută",
+      "medium": "medie",
+      "high": "ridicată",
+      "red_red": "roșu–roșu",
+      "red_white": "roșu–alb",
+      "white_white": "alb–alb",
+      "junctional": "joncțională",
+      "estimated_from_meniscocapsular_distance": "estimată din distanța meniscocapsulară",
+      "estimated_from_peripheral_location": "estimată din poziția periferică",
+      "insufficient_anatomic_resolution": "rezoluție anatomică insuficientă",
+      "geometry_calibrated": "geometrie calibrată",
+      "visual_estimate": "estimare vizuală",
+      "not_measurable": "nemăsurabil",
+      "present": "prezent",
+      "preserved_appearing": "aspect păstrat",
+      "degenerative_appearing": "aspect degenerativ",
+      "acute_appearing": "aspect acut",
+      "chronic_appearing": "aspect cronic",
+      "mixed": "mixt",
+      "supporting": "susținere",
+      "counter": "contra-dovadă",
+      "context": "context",
+      "indeterminate": "nedeterminat",
+      "true": "da",
+      "false": "nu",
+      "left": "stâng",
+      "right": "drept"
+    },
+    "status": {
+      "verified": "dovadă verificată",
+      "recovered": "dovadă recuperată",
+      "cross_window": "dovadă din fereastră vecină",
+      "unverified": "proveniență neconfirmată"
+    },
+    "role": {
+      "primary-volume": "volum principal",
+      "sagittal-meniscus": "sagital meniscal",
+      "coronal-confirmation": "confirmare coronală",
+      "axial-confirmation": "confirmare axială",
+      "anatomy-correlation": "corelare anatomică"
+    }
+  }
+}
