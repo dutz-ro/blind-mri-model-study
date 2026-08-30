@@ -8,14 +8,25 @@ import pytest
 
 from mristudy.clinical_schema import load_knee_meniscus_schema
 from mristudy.medgemma.output_contract import (
+    ARRAY_BOUNDS,
     CORRECTION_POLICY,
+    DECODER_POLICY,
+    MAX_FREE_TEXT_CHARACTERS,
+    MAX_NEW_TOKENS,
+    OUTPUT_BUDGET_MARGIN_TOKENS,
+    PROVED_MAXIMUM_STRUCTURAL_CHARACTERS,
     classify_output,
+    decoder_acceptance,
+    decoder_output_bounds,
     decoder_schema,
     enumerate_json_candidates,
+    generation_policy,
+    maximum_structural_output,
     normalize_structural_result,
     strict_json_loads,
     structural_correction_errors,
     structural_correction_prompt,
+    validate_result,
     verify_normalization,
 )
 from tests.test_clinical_schema import valid_result
@@ -223,6 +234,35 @@ def test_decoder_schema_relaxes_boolean_consts_only_for_lmfe() -> None:
     assert canonical_boundary["repairability_determined"] == {"const": False}
 
 
+def test_decoder_schema_enumerates_only_approved_evidence_ids() -> None:
+    canonical = load_knee_meniscus_schema()
+    constrained = decoder_schema(canonical, ["image-000123", "image-000124"])
+    evidence = constrained["$defs"]["evidence"]["properties"]["export_id"]
+    assert evidence == {"type": "string", "enum": ["image-000123", "image-000124"]}
+    canonical_evidence = canonical["$defs"]["evidence"]["properties"]["export_id"]
+    assert canonical_evidence["pattern"] == "^image-[0-9]{6}$"
+
+
+def test_decoder_replay_accepts_valid_result_and_rejects_impossible_character() -> None:
+    pytest.importorskip("lmformatenforcer")
+    schema = load_knee_meniscus_schema()
+    text = json.dumps(valid_result())
+    accepted = decoder_acceptance(text, schema, ["image-000123"])
+    assert accepted["accepted"] is True
+    mutated = text.replace("image-000123", "image-999999")
+    rejected = decoder_acceptance(mutated, schema, ["image-000123"])
+    assert rejected["accepted"] is False
+    assert rejected["reason"] == "character_outside_decoder_mask"
+
+
+def test_generation_policy_neutralizes_repetition_processors() -> None:
+    policy = generation_policy()
+    assert policy["repetition_penalty"] == 1.0
+    assert policy["no_repeat_ngram_size"] == 0
+    assert policy["evidence_ids_enumerated"] is True
+    assert DECODER_POLICY == "medgemma-lmfe-decoder-v3"
+
+
 @pytest.mark.parametrize(
     "mutator",
     [
@@ -264,3 +304,78 @@ def test_non_object_boundary_is_not_synthesized() -> None:
     normalized, actions = normalize_structural_result(source)
     assert normalized["treatment_boundary"] == []
     assert not actions
+
+
+def _walk(node, path=""):
+    if isinstance(node, dict):
+        yield path, node
+        for key, value in node.items():
+            yield from _walk(value, f"{path}/{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _walk(value, f"{path}/{index}")
+
+
+def test_decoder_schema_bounds_every_array_and_free_text_string() -> None:
+    """An unbounded schema makes any token budget a guess rather than a limit.
+
+    The canonical schema constrains no array length and no string length, so the
+    decoder could legally emit an arbitrarily large object. A real window used
+    that freedom to repeat one absent finding until the budget ran out.
+    """
+    canonical = load_knee_meniscus_schema()
+    constrained = decoder_schema(canonical, ["image-000001"])
+    unbounded_arrays = [
+        path
+        for path, node in _walk(constrained)
+        if node.get("type") == "array" and "maxItems" not in node
+    ]
+    unbounded_strings = [
+        path
+        for path, node in _walk(constrained)
+        if node.get("type") == "string"
+        and "maxLength" not in node
+        and not {"enum", "const", "pattern"} & set(node)
+    ]
+    assert not unbounded_arrays
+    assert not unbounded_strings
+    assert constrained["properties"]["findings"]["maxItems"] == ARRAY_BOUNDS["findings"]
+    assert (
+        constrained["$defs"]["evidence"]["properties"]["description"]["maxLength"]
+        == MAX_FREE_TEXT_CHARACTERS
+    )
+
+
+def test_canonical_schema_stays_unbounded_so_bounds_cannot_invalidate_output() -> None:
+    canonical = load_knee_meniscus_schema()
+    decoder_schema(canonical, ["image-000001"])
+    assert "maxItems" not in canonical["properties"]["findings"]
+    assert canonical == load_knee_meniscus_schema()
+
+
+def test_maximum_structural_output_is_canonically_valid_and_finite() -> None:
+    """The output the budget is proved against must itself be a legal result."""
+    canonical = load_knee_meniscus_schema()
+    evidence_ids = [f"image-{index + 1:06d}" for index in range(32)]
+    maximum = maximum_structural_output(canonical, evidence_ids)
+    assert validate_result(maximum, canonical) == []
+    assert len(maximum["findings"]) == ARRAY_BOUNDS["findings"]
+    assert len(maximum["findings"][0]["traceable_evidence"]) == (
+        ARRAY_BOUNDS["traceable_evidence"]
+    )
+    cited = [item["export_id"] for item in maximum["findings"][0]["traceable_evidence"]]
+    assert len(cited) == len(set(cited))
+    assert maximum == maximum_structural_output(canonical, evidence_ids)
+
+
+def test_output_budget_leaves_margin_for_the_largest_decodable_result() -> None:
+    """Characters are checked here; the runtime proves tokens with its tokenizer."""
+    canonical = load_knee_meniscus_schema()
+    maximum = maximum_structural_output(
+        canonical, [f"image-{index + 1:06d}" for index in range(32)]
+    )
+    serialized = json.dumps(maximum, indent=2)
+    assert OUTPUT_BUDGET_MARGIN_TOKENS > 0
+    assert MAX_NEW_TOKENS > OUTPUT_BUDGET_MARGIN_TOKENS
+    assert len(serialized) <= PROVED_MAXIMUM_STRUCTURAL_CHARACTERS
+    assert decoder_output_bounds()["policy"] == "medgemma-decoder-output-bounds-v1"

@@ -141,7 +141,14 @@ def _success_return_key_sets(name: str) -> list[set[str]]:
 
 @pytest.mark.parametrize(
     "endpoint",
-    ["health", "synthetic_probe", "synthetic_dicom_probe", "synthetic_json_probe"],
+    [
+        "health",
+        "synthetic_probe",
+        "synthetic_dicom_probe",
+        "synthetic_json_probe",
+        "synthetic_liveness_probe",
+        "decoder_bounds",
+    ],
 )
 def test_probe_and_health_endpoints_expose_decoder_identity(endpoint: str) -> None:
     """Probes gate medical access, so they must prove the decoder that will be used.

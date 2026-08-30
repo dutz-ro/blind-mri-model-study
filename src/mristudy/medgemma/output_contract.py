@@ -15,7 +15,7 @@ OUTPUT_VALIDATION_POLICY = "medgemma-output-validation-v2"
 CORRECTION_POLICY = "medgemma-structural-correction-v2"
 MAX_OUTPUT_CHARACTERS = 1_000_000
 MAX_JSON_DEPTH = 128
-DECODER_POLICY = "medgemma-lmfe-decoder-v1"
+DECODER_POLICY = "medgemma-lmfe-decoder-v3"
 DECODER_IMPLEMENTATION = "lm-format-enforcer"
 DECODER_VERSION = "0.11.3"
 DECODER_CONFIG = {
@@ -23,6 +23,85 @@ DECODER_CONFIG = {
     "max_json_array_length": 128,
     "max_consecutive_whitespaces": 12,
 }
+GENERATION_POLICY = "medgemma-constrained-greedy-v3"
+EVIDENCE_ID_PATTERN = r"^image-[0-9]{6}$"
+
+OUTPUT_BOUNDS_POLICY = "medgemma-decoder-output-bounds-v1"
+# The canonical schema deliberately bounds no array and no free-text string: it
+# describes what a finding *is*, not how much of it one window may contain. That
+# left the decodable output infinite, so no token budget could ever be a
+# guarantee. A real medical window then emitted the same "absent, medial body,
+# no tear" finding eight times, consumed the whole budget, and the window failed
+# after three byte-identical attempts. Greedy decoding under a schema mask has no
+# other stopping force, because suppressing repetition through the sampler is
+# what broke constrained decoding in the first place.
+#
+# These bounds are applied only to the derived structural schema used to build
+# the token mask. The canonical schema stays byte-identical and remains the
+# authoritative validator, so a bounded output is always canonically valid; the
+# bounds can only prevent output, never invalidate it. Repeated identical claims
+# are merged by series integration anyway, so a per-window cap costs no clinical
+# content.
+# Every bound sits above the widest value observed across the 32 preserved
+# structured window results, so the limits cut off runaway repetition rather
+# than legitimate reporting. The observed maxima were: 65 free-text characters,
+# 9 supporting citations, 2 counter citations, 5 finding limitations, 2 review
+# factors and 8 global limitations. Findings peaked at 8, but that single case
+# was the degenerate repetition this policy exists to stop; the 95th percentile
+# is 2.
+MAX_FREE_TEXT_CHARACTERS = 128
+DEFAULT_ARRAY_BOUND = 4
+ARRAY_BOUNDS = {
+    "findings": 6,
+    "global_limitations": 10,
+    "traceable_evidence": 10,
+    "counter_evidence": 4,
+    "imaging_factors_for_specialist_review": 4,
+    "limitations": 6,
+}
+# A JSON number has no length constraint in the schema and none in the decoder,
+# so the worst case is modelled with a wide fixed-point placeholder instead of
+# being claimed as enforced.
+MAX_NUMERIC_PLACEHOLDER = 1234567890.123456
+
+# Derived from the bounded schema by scripts/verify-decoder-output-budget.py and
+# re-proved on the runtime itself, with the real tokenizer, before any medical
+# access. It is not a guess: /decoder-bounds recomputes it and the probe gate
+# fails if the maximum decodable output no longer fits.
+MAX_NEW_TOKENS = 12288
+OUTPUT_BUDGET_MARGIN_TOKENS = 512
+# Measured with the pinned MedGemma tokenizer on the bounds above, for the
+# widest approved window of 32 images: the maximum decodable output is 46_394
+# characters and 10_791 tokens, so 11_303 tokens are required including the
+# margin. The character figure is asserted locally without a tokenizer; widening
+# any bound raises it, fails the test, and forces the token proof to be run
+# again before the budget is trusted.
+PROVED_MAXIMUM_STRUCTURAL_CHARACTERS = 46_394
+LONG_OUTPUT_PROBE_RECORDS = 96
+LONG_OUTPUT_PROBE_MIN_TOKENS = 4097
+
+
+def generation_policy() -> dict[str, Any]:
+    """The only approved generation policy for constrained canonical JSON.
+
+    ``no_repeat_ngram_size`` and ``repetition_penalty`` are deliberately
+    neutral. Canonical JSON for this schema must repeat structural n-grams:
+    ``"export_id": "image-`` and ``"role": "supporting"`` recur once per cited
+    image. A repetition constraint sets those continuations to ``-inf`` at the
+    same positions where the schema parser already allows only one token, the
+    combined mask becomes empty, and generation leaves the grammar and stalls
+    into whitespace until it is cut off. Suppressing repeated normal statements
+    is a prompt and schema concern, not a sampler concern.
+    """
+    return {
+        "do_sample": False,
+        "repetition_penalty": 1.0,
+        "no_repeat_ngram_size": 0,
+        "json_schema_enforced": True,
+        "canonical_eos_only": True,
+        "evidence_ids_enumerated": True,
+        "policy": GENERATION_POLICY,
+    }
 
 SEGMENT_ALIASES = {
     "entire": "multiple_segments",
@@ -78,21 +157,170 @@ class DuplicateJsonKeyError(ValueError):
     pass
 
 
-def decoder_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Return an LMFE-compatible structural schema; canonical validation remains authoritative."""
-    def convert(value: Any) -> Any:
+def decoder_schema(
+    schema: dict[str, Any],
+    evidence_ids: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Return an LMFE-compatible structural schema; canonical validation remains authoritative.
+
+    When the approved window's evidence IDs are supplied, every ``export_id``
+    that the canonical schema constrains by pattern is additionally constrained
+    to that exact enumeration. A citation outside the window then cannot be
+    decoded at all, instead of being produced and quarantined afterwards. The
+    canonical schema is never modified: this derived structural schema is used
+    only to build the token mask.
+    """
+    allowed = list(dict.fromkeys(evidence_ids or []))
+    named_children = {"properties", "$defs", "definitions"}
+
+    def convert(value: Any, key: str = "") -> Any:
         if isinstance(value, list):
-            return [convert(item) for item in value]
+            return [convert(item, key) for item in value]
         if not isinstance(value, dict):
             return value
-        converted = {key: convert(item) for key, item in value.items() if key != "$schema"}
+        converted: dict[str, Any] = {}
+        for name, item in value.items():
+            if name == "$schema":
+                continue
+            if name in named_children and isinstance(item, dict):
+                converted[name] = {
+                    child: convert(child_value, child) for child, child_value in item.items()
+                }
+            else:
+                converted[name] = convert(item, key)
         constant = converted.get("const")
         if isinstance(constant, bool):
             converted.pop("const")
             converted["type"] = "boolean"
+        if allowed and converted.get("pattern") == EVIDENCE_ID_PATTERN:
+            converted.pop("pattern")
+            converted["enum"] = allowed
+        if converted.get("type") == "array" and "maxItems" not in converted:
+            converted["maxItems"] = ARRAY_BOUNDS.get(key, DEFAULT_ARRAY_BOUND)
+        if (
+            converted.get("type") == "string"
+            and "maxLength" not in converted
+            and not {"enum", "const", "pattern"} & set(converted)
+        ):
+            converted["maxLength"] = MAX_FREE_TEXT_CHARACTERS
         return converted
 
     return convert(schema)
+
+
+def decoder_output_bounds() -> dict[str, Any]:
+    """The structural limits that make the decodable output finite."""
+    return {
+        "policy": OUTPUT_BOUNDS_POLICY,
+        "max_free_text_characters": MAX_FREE_TEXT_CHARACTERS,
+        "default_array_items": DEFAULT_ARRAY_BOUND,
+        "array_items": dict(ARRAY_BOUNDS),
+    }
+
+
+def maximum_structural_output(
+    schema: dict[str, Any],
+    evidence_ids: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Build the largest result the bounded decoder can emit for one window.
+
+    This is the object the token budget must accommodate. It is deliberately
+    built from the derived schema rather than from any observed output, so the
+    budget is proved against what is decodable, not against what happened to be
+    generated once.
+    """
+    bounded = decoder_schema(schema, evidence_ids)
+    definitions = bounded.get("$defs") or bounded.get("definitions") or {}
+
+    def resolve(node: dict[str, Any]) -> dict[str, Any]:
+        reference = node.get("$ref")
+        if not reference:
+            return node
+        return resolve(definitions[str(reference).rsplit("/", maxsplit=1)[-1]])
+
+    def build(node: Any) -> Any:
+        if not isinstance(node, dict):
+            return None
+        node = resolve(node)
+        if "const" in node:
+            return node["const"]
+        if node.get("enum"):
+            return max(node["enum"], key=lambda item: len(str(item)))
+        declared = node.get("type")
+        if isinstance(declared, list):
+            declared = next((item for item in declared if item != "null"), "string")
+        if declared == "object":
+            return {
+                name: build(child) for name, child in (node.get("properties") or {}).items()
+            }
+        if declared == "array":
+            items = node.get("items") or {}
+            count = int(node.get("maxItems", DEFAULT_ARRAY_BOUND))
+            return [build(items) for _ in range(count)]
+        if declared == "string":
+            return _free_text_filler(int(node.get("maxLength", MAX_FREE_TEXT_CHARACTERS)))
+        if declared in {"number", "integer"}:
+            return MAX_NUMERIC_PLACEHOLDER
+        if declared == "boolean":
+            return False
+        return None
+
+    result = build(bounded)
+    if isinstance(result, dict):
+        _assign_distinct_evidence(result, list(dict.fromkeys(evidence_ids or [])))
+    return result
+
+
+_FREE_TEXT_SPECIMEN = (
+    "Intrasubstance signal reaching the inferior articular surface of the posterior horn "
+    "on adjacent sagittal slices, with volume averaging at the meniscocapsular margin. "
+)
+
+
+def _free_text_filler(length: int) -> str:
+    """Fill a bounded string with ordinary clinical prose.
+
+    A run of one repeated character tokenises far more densely than real text
+    and understated the maximum output by roughly a third, which would have made
+    the proved budget optimistic. The specimen models what the model actually
+    emits, so the measured maximum is representative rather than flattering.
+    """
+    if length <= 0:
+        return ""
+    repeats = length // len(_FREE_TEXT_SPECIMEN) + 1
+    return (_FREE_TEXT_SPECIMEN * repeats)[:length]
+
+
+def _assign_distinct_evidence(result: dict[str, Any], evidence_ids: list[str]) -> None:
+    """Give the maximum output distinct citations, as the contract requires.
+
+    A finding may not cite the same image twice, nor cite one image as both
+    supporting and counter evidence. Repeating a single identifier would build a
+    maximum output that the canonical validator rejects, which would hide the
+    very property this construction is meant to prove.
+    """
+    findings = result.get("findings")
+    if not isinstance(findings, list) or not evidence_ids:
+        return
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        cursor = 0
+        for key, role in (
+            ("traceable_evidence", "supporting"),
+            ("counter_evidence", "counter"),
+        ):
+            entries = finding.get(key)
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                if "export_id" in entry:
+                    entry["export_id"] = evidence_ids[cursor % len(evidence_ids)]
+                    cursor += 1
+                if "role" in entry:
+                    entry["role"] = role
 
 
 def policy_digest(policy: str, payload: Any) -> str:
@@ -155,7 +383,62 @@ def structural_correction_errors(decision: ExtractionDecision) -> list[str]:
     return list(dict.fromkeys(errors)) or [decision.status]
 
 
+def decoder_acceptance(
+    text: str,
+    schema: dict[str, Any],
+    evidence_ids: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Replay text through the constrained decoder's own grammar.
+
+    A constrained run may only emit characters the schema parser allowed. If the
+    recorded text diverges, the token mask was overridden during generation and
+    the output is a runtime defect, not a model answer. This check needs no GPU
+    and no model, so every attempt can be audited after the fact.
+    """
+    from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
+
+    parser = JsonSchemaParser(
+        decoder_schema(schema, evidence_ids),
+        config=CharacterLevelParserConfig(**DECODER_CONFIG),
+    )
+    for index, character in enumerate(text):
+        try:
+            allowed = parser.get_allowed_characters()
+        except Exception as error:  # noqa: BLE001 - reported, never raised onward
+            return {
+                "accepted": False,
+                "divergence_index": index,
+                "reason": f"parser_failed:{type(error).__name__}",
+                "consumed_characters": index,
+            }
+        if character not in allowed:
+            return {
+                "accepted": False,
+                "divergence_index": index,
+                "reason": "character_outside_decoder_mask",
+                "consumed_characters": index,
+            }
+        try:
+            parser = parser.add_character(character)
+        except Exception as error:  # noqa: BLE001 - reported, never raised onward
+            return {
+                "accepted": False,
+                "divergence_index": index,
+                "reason": f"parser_failed:{type(error).__name__}",
+                "consumed_characters": index,
+            }
+    return {
+        "accepted": True,
+        "divergence_index": None,
+        "reason": None,
+        "consumed_characters": len(text),
+    }
+
+
 def decoder_contract(schema: dict[str, Any]) -> dict[str, Any]:
+    # The digest stays window-independent: it binds the structural schema, the
+    # decoder configuration and the fact that evidence IDs are enumerated per
+    # window, never the enumeration of one window.
     constrained_schema = decoder_schema(schema)
     payload = {
         "implementation": DECODER_IMPLEMENTATION,
@@ -163,12 +446,18 @@ def decoder_contract(schema: dict[str, Any]) -> dict[str, Any]:
         "policy": DECODER_POLICY,
         "config": DECODER_CONFIG,
         "schema": constrained_schema,
+        "evidence_ids_enumerated": True,
+        "evidence_id_pattern": EVIDENCE_ID_PATTERN,
+        "output_bounds": decoder_output_bounds(),
+        "max_new_tokens": MAX_NEW_TOKENS,
     }
     return {
         "implementation": DECODER_IMPLEMENTATION,
         "version": DECODER_VERSION,
         "policy": DECODER_POLICY,
         "config": dict(DECODER_CONFIG),
+        "evidence_ids_enumerated": True,
+        "output_bounds": decoder_output_bounds(),
         "policy_sha256": policy_digest(DECODER_POLICY, payload),
     }
 

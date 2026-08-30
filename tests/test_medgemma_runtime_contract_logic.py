@@ -33,14 +33,8 @@ def approved() -> dict:
         "evidence_ids": ["image-000001", "image-000002"],
         "prompt_sha256": "prompt",
         "output_schema": "knee-meniscus-finding-v2",
-        "max_new_tokens": 4096,
-        "generation": {
-            "do_sample": False,
-            "repetition_penalty": 1.05,
-            "no_repeat_ngram_size": 8,
-            "json_schema_enforced": True,
-            "canonical_eos_only": True,
-        },
+        "max_new_tokens": OUTPUT_MODULE.MAX_NEW_TOKENS,
+        "generation": OUTPUT_MODULE.generation_policy(),
         "decoder": OUTPUT_MODULE.decoder_contract(
             __import__("mristudy.clinical_schema", fromlist=["load_knee_meniscus_schema"])
             .load_knee_meniscus_schema()
@@ -90,9 +84,69 @@ def test_runtime_contract_rejects_duplicate_and_oversized_lists() -> None:
 def test_runtime_contract_rejects_changed_generation_policy() -> None:
     payload = dict(approved())
     payload["generation"] = dict(payload["generation"])
-    payload["generation"]["repetition_penalty"] = 1.0
+    payload["generation"]["repetition_penalty"] = 1.05
     errors = CONTRACTS.validate_window_payload(payload, approved())
     assert "generation differs from approved window" in errors
+
+
+def test_finite_logits_guard_fails_closed_on_empty_intersection() -> None:
+    class FakeFinite:
+        def __init__(self, value):
+            self.value = value
+
+        def any(self, dim):
+            assert dim == -1
+            return self
+
+        def all(self):
+            return self
+
+        def item(self):
+            return self.value
+
+    class FakeScores:
+        def __init__(self, value):
+            self.value = value
+
+        def isfinite(self):
+            return FakeFinite(self.value)
+
+    import pytest
+
+    scores = FakeScores(False)
+    with pytest.raises(RuntimeError, match="removed every finite token"):
+        CONTRACTS.require_finite_logits(None, scores)
+    accepted = FakeScores(True)
+    assert CONTRACTS.require_finite_logits(None, accepted) is accepted
+
+
+def test_generation_budget_exhaustion_has_small_tokenizer_tolerance() -> None:
+    assert CONTRACTS.generation_budget_exhausted(8192, 8192)
+    assert CONTRACTS.generation_budget_exhausted(8184, 8192)
+    assert not CONTRACTS.generation_budget_exhausted(8183, 8192)
+
+
+def test_runtime_restores_approved_config_after_lmfe_overwrite() -> None:
+    class RootParser:
+        config = None
+
+    class TokenEnforcer:
+        root_parser = RootParser()
+
+    class Callback:
+        token_enforcer = TokenEnforcer()
+
+    config = object()
+    callback = Callback()
+    assert CONTRACTS.restore_decoder_config(callback, config) is callback
+    assert callback.token_enforcer.root_parser.config is config
+
+
+def test_runtime_rejects_decoder_callback_without_root_parser() -> None:
+    import pytest
+
+    with pytest.raises(RuntimeError, match="exposes no root parser"):
+        CONTRACTS.restore_decoder_config(object(), object())
 
 
 def test_runtime_contract_rejects_changed_decoder_policy() -> None:

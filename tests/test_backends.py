@@ -3,6 +3,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from mristudy.backends import scaleway
 from mristudy.backends.dicomweb import BasicAuth, DicomWebClient, DicomWebEndpoint
 from mristudy.backends.plans import revalidate_planned_file
 from mristudy.backends.scaleway import final_provision_plan
@@ -161,3 +162,32 @@ def test_scaleway_plan_requires_medgemma_and_evidence_digests(tmp_path: Path) ->
             container_tar_sha256=sha256_file(archive),
             cloud_init_path=cloud_init,
         )
+
+
+def test_provision_reuses_only_an_empty_destroyed_manifest(
+    tmp_path: Path,
+) -> None:
+    plan = {
+        "plan_sha256": "new",
+        "zone": "fr-par-2",
+        "project_id": "project",
+    }
+    rotated = scaleway._new_resource_manifest(
+        plan,
+        tmp_path / "ssh" / "id_ed25519",
+        {"resources": {}, "destroyed_resources": {"server_id": "old"}},
+    )
+    assert rotated["plan_sha256"] == plan["plan_sha256"]
+    assert rotated["resources"] == {}
+    assert rotated["previous_destroyed_resources"] == {"server_id": "old"}
+
+
+def test_new_resource_manifest_does_not_carry_active_resources(tmp_path: Path) -> None:
+    plan = {"plan_sha256": "new", "zone": "fr-par-2", "project_id": "project"}
+    manifest = scaleway._new_resource_manifest(
+        plan,
+        tmp_path / "id_ed25519",
+        {"resources": {"server_id": "old"}},
+    )
+    assert manifest["resources"] == {}
+    assert "previous_destroyed_resources" not in manifest

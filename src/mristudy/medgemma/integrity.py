@@ -7,7 +7,13 @@ from ..errors import MRIStudyError
 from ..utils import canonical_json, sha256_bytes
 from .evidence import ROLE_ORDER
 from .evidence_trace import EVIDENCE_TRACE_POLICY
-from .output_contract import decoder_contract, output_contract, policy_digest
+from .output_contract import (
+    MAX_NEW_TOKENS,
+    decoder_contract,
+    generation_policy,
+    output_contract,
+    policy_digest,
+)
 
 
 def recompute_plan_sha256(plan: dict[str, Any]) -> str:
@@ -123,17 +129,11 @@ def require_complete_plan(plan: dict[str, Any]) -> None:
         if trace.get("policy_sha256") != expected_trace_digest:
             raise MRIStudyError("MedGemma evidence trace policy digest is invalid.")
     for window in plan.get("windows") or []:
-        if window.get("max_new_tokens") != 4096:
+        if window.get("max_new_tokens") != MAX_NEW_TOKENS:
             raise MRIStudyError("MedGemma window generation limit differs from approved contract.")
         if window.get("maximum_structural_corrections") != 2:
             raise MRIStudyError("MedGemma correction policy differs from approved contract.")
-        if window.get("generation") != {
-            "do_sample": False,
-            "repetition_penalty": 1.05,
-            "no_repeat_ngram_size": 8,
-            "json_schema_enforced": True,
-            "canonical_eos_only": True,
-        }:
+        if window.get("generation") != generation_policy():
             raise MRIStudyError("MedGemma generation policy differs from approved contract.")
         if window.get("decoder") != expected_decoder:
             raise MRIStudyError("MedGemma window decoder differs from approved contract.")

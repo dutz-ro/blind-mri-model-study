@@ -6,7 +6,11 @@ import pytest
 from mristudy.clinical_schema import load_knee_meniscus_schema
 from mristudy.errors import MRIStudyError
 from mristudy.medgemma.integrity import recompute_plan_sha256
-from mristudy.medgemma.output_contract import decoder_contract, output_contract
+from mristudy.medgemma.output_contract import (
+    MAX_NEW_TOKENS,
+    decoder_contract,
+    output_contract,
+)
 from mristudy.medgemma.runner import execute_window, run_window_plan
 from mristudy.prompts import medgemma_json_suffix_v2, medgemma_knee_meniscus_prompt_v2
 from mristudy.utils import canonical_json, sha256_bytes
@@ -117,12 +121,14 @@ def plan() -> dict:
         ),
         "prompt_sha256": sha256_bytes(prompt.encode()),
         "output_schema": "knee-meniscus-finding-v2",
-        "max_new_tokens": 4096,
+        "max_new_tokens": MAX_NEW_TOKENS,
         "maximum_structural_corrections": 2,
         "generation": {
             "do_sample": False,
-            "repetition_penalty": 1.05,
-            "no_repeat_ngram_size": 8,
+            "repetition_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "evidence_ids_enumerated": True,
+            "policy": "medgemma-constrained-greedy-v3",
             "json_schema_enforced": True,
             "canonical_eos_only": True,
         },

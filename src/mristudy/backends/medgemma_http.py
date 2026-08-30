@@ -44,6 +44,12 @@ class MedGemmaHttpClient:
     def synthetic_json_probe(self) -> dict[str, Any]:
         return self._post("/synthetic-json-probe", {"image_count": 1})
 
+    def synthetic_liveness_probe(self) -> dict[str, Any]:
+        return self._post("/synthetic-liveness-probe", {"record_count": 96})
+
+    def decoder_bounds_probe(self) -> dict[str, Any]:
+        return self._post("/decoder-bounds", {})
+
     def probe_dicomweb(self, study_uid: str, series_uid: str) -> dict[str, Any]:
         return self._post(
             "/probe-dicomweb",

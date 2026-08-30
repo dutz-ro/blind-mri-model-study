@@ -10,6 +10,7 @@ from mristudy.medgemma.evidence import (
     finalize_evidence_map,
     ordered_series_instances,
 )
+from mristudy.medgemma.output_contract import MAX_NEW_TOKENS, generation_policy
 from mristudy.medgemma.plan import build_medgemma_window_plan
 
 
@@ -84,21 +85,13 @@ def test_full_plan_has_617_unique_slices_and_26_windows(tmp_path: Path) -> None:
     }
     assert all(window["model_revision"] == "revision" for window in plan["windows"])
     assert all(window["runtime_digest"] == "sha256:runtime" for window in plan["windows"])
-    assert all(
-        window["generation"]
-        == {
-            "do_sample": False,
-            "repetition_penalty": 1.05,
-            "no_repeat_ngram_size": 8,
-            "json_schema_enforced": True,
-            "canonical_eos_only": True,
-        }
-        for window in plan["windows"]
-    )
+    assert all(window["max_new_tokens"] == MAX_NEW_TOKENS for window in plan["windows"])
+    assert all(window["generation"] == generation_policy() for window in plan["windows"])
     assert all(window["decoder"] == plan["decoder"] for window in plan["windows"])
     assert plan["decoder"]["implementation"] == "lm-format-enforcer"
     assert plan["decoder"]["version"] == "0.11.3"
     assert plan["decoder"]["config"]["max_json_array_length"] == 128
+    assert plan["decoder"]["evidence_ids_enumerated"] is True
     assert plan["historical_replay_sha256"] == "a" * 64
     assert plan["schema_version"] == 3
     assert plan["output_contract"]["validation"] == "medgemma-output-validation-v2"

@@ -9,7 +9,11 @@ from mristudy.medgemma.integrity import (
     require_complete_plan,
     require_valid_evidence_map,
 )
-from mristudy.medgemma.output_contract import decoder_contract
+from mristudy.medgemma.output_contract import (
+    MAX_NEW_TOKENS,
+    decoder_contract,
+    generation_policy,
+)
 from mristudy.utils import canonical_json, sha256_bytes
 
 
@@ -35,15 +39,9 @@ def complete_plan() -> dict:
                 "series_uid": "1.2.4",
                 "instance_uids": ["1.2.5", "1.2.6"],
                 "evidence_ids": ["image-000001", "image-000002"],
-                "max_new_tokens": 4096,
+                "max_new_tokens": MAX_NEW_TOKENS,
                 "maximum_structural_corrections": 2,
-                "generation": {
-                    "do_sample": False,
-                    "repetition_penalty": 1.05,
-                    "no_repeat_ngram_size": 8,
-                    "json_schema_enforced": True,
-                    "canonical_eos_only": True,
-                },
+                "generation": generation_policy(),
                 "decoder": decoder,
                 "start_index": 0,
                 "end_index": 1,

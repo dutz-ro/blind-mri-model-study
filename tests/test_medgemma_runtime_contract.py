@@ -18,6 +18,8 @@ def test_runtime_is_syntax_valid_and_has_required_private_endpoints() -> None:
     assert '@app.post("/synthetic-probe")' in source
     assert '@app.post("/synthetic-dicom-probe")' in source
     assert '@app.post("/synthetic-json-probe")' in source
+    assert '@app.post("/synthetic-liveness-probe")' in source
+    assert "Synthetic non-medical 32-image constrained-generation liveness test" in source
     assert '@app.post("/probe-dicomweb")' in source
     assert '@app.post("/analyze-window")' in source
     assert '@app.post("/analyze")' not in source
@@ -34,6 +36,7 @@ def test_runtime_pins_schema_and_supports_offline_model_snapshot() -> None:
     assert 'MODEL_PATH = os.environ.get("MEDGEMMA_MODEL_PATH", "")' in source
     assert '"local_files_only": True' in source
     assert '"MEDGEMMA_MODEL_PATH is required."' in source
+    assert 'torch.backends.python_native.disable_operations("bmm")' in source
     assert "Draft202012Validator" in source
     assert "APPROVED_PLAN_SHA256" in source
     assert "PROBE_AUTHORIZATION_PATH" in source
@@ -46,7 +49,8 @@ def test_runtime_pins_schema_and_supports_offline_model_snapshot() -> None:
     # mention, and it breaks whenever a legitimate new response path is added.
     assert '"decoder": _decoder_identity()' in source
     assert "def _decoder_identity()" in source
-    assert "schema_errors = structural_correction_errors(decision)" in source
+    assert 'else ["decoder_contract_violated"]' in source
+    assert "decoder_acceptance(" in source
     assert "return structural_correction_prompt(previous, attempt, errors)" in source
     assert 'base_prompt.rsplit("Return JSON now."' not in source
     assert 'maximum_corrections = int(approved["maximum_structural_corrections"])' in source
@@ -119,15 +123,22 @@ def test_medical_output_contract_is_placed_after_images() -> None:
     assert '"text": "Return JSON now." + prompt_parts[1]' in source
     assert '"repetition_penalty": request.generation["repetition_penalty"]' in source
     assert '"no_repeat_ngram_size": request.generation["no_repeat_ngram_size"]' in source
-    assert '"prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn()' in source
+    assert '"prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn(' in source
+    assert '"logits_processor": [_FiniteLogitsGuard()]' in source
+    assert "request.evidence_ids" in source
+    assert "decoder_replay = decoder_acceptance(" in source
+    assert "generation_budget_exhausted(" in source
+    assert '["token_budget_exhausted"]' in source
     assert '"eos_token_id": _canonical_eos_token_id()' in source
-    assert source.count('"eos_token_id": _canonical_eos_token_id()') == 2
+    assert source.count('"eos_token_id": _canonical_eos_token_id()') == 3
     assert "return canonical_eos_guard(base_callback, tokenizer_eos, configured_eos)" in source
     assert "generate_kwargs={" in source
     assert "JsonSchemaParser(" in source
     assert "constrained_schema," in source
     assert "decoder_contract(schema)" in source
     assert "CharacterLevelParserConfig(**DECODER_CONFIG)" in source
+    assert "restore_decoder_config(" in source
+    assert "alphabet=_tokenizer_data.tokenizer_alphabet" in source
     assert "Constrained decoder allowed a non-JSON prefix" in source
     assert '"starts_with_json_object": raw_text.lstrip().startswith("{")' in source
     assert '"generation": request.generation' in source
@@ -169,3 +180,59 @@ def test_failed_pre_lock_scaleway_run_has_an_approved_cleanup_path() -> None:
         assert 'medgemma-results-lock.json' in source
         assert "failed_pre_lock_run" in source
     assert "state.invalidate_backend_approval()" in backend_source
+
+
+def test_successful_cleanup_clears_the_active_resource_manifest() -> None:
+    """Provider absence and local state must agree after every destroy path.
+
+    The completed-run branch advanced to CLOUD_CLEANED but left server, volume,
+    IP and key identifiers under ``resources``. That made the local manifest
+    claim resources were active after the provider had proved them absent.
+    """
+    source = (
+        Path(__file__).parents[1] / "src/mristudy/backend_cli.py"
+    ).read_text(encoding="utf-8")
+    destroy_call = source.index("result = destroy_resources(")
+    failed_branch = source.index("if failed_pre_lock_run:", destroy_call)
+    clearing = source.index('resources["resources"] = {}', destroy_call)
+    assert destroy_call < clearing < failed_branch
+
+
+def test_runtime_stops_instead_of_repeating_a_deterministic_correction() -> None:
+    """Greedy decoding cannot answer differently to a prompt it already answered.
+
+    One medical window spent three 275-second generations producing the exact
+    same bytes before failing. Detecting the repeat costs nothing and ends the
+    window immediately with a reason the operator can act on.
+    """
+    source = RUNTIME.read_text(encoding="utf-8")
+    assert 'item["raw_text"] == raw_text for item in attempts[:-1]' in source
+    assert '["deterministic_repeat"]' in source
+
+
+def test_runtime_proves_the_output_budget_before_medical_access() -> None:
+    source = RUNTIME.read_text(encoding="utf-8")
+    assert '@app.post("/decoder-bounds")' in source
+    assert "maximum_structural_output(" in source
+    assert "OUTPUT_BUDGET_MARGIN_TOKENS" in source
+    assert "def _largest_approved_window()" in source
+    assert '"passed": required <= MAX_NEW_TOKENS and not canonical_errors' in source
+
+
+def test_cli_offers_a_single_window_smoke_run_before_the_full_run() -> None:
+    """The gap between synthetic probes and 26 medical windows had no step in it."""
+    source = (Path(__file__).parents[1] / "src/mristudy/backend_cli.py").read_text(
+        encoding="utf-8"
+    )
+    assert '@backend_app.command("medgemma-smoke-window")' in source
+    assert "Stage.DICOM_STORE_VERIFIED" in source
+    assert 'medgemma-results-lock.json' in source
+    assert "medical_data_authorized" in source
+
+
+def test_liveness_probe_acceptance_is_a_decoder_property() -> None:
+    source = RUNTIME.read_text(encoding="utf-8")
+    assert "set(returned_ids) == set(expected_ids)" in source
+    assert '"evidence_ids_covered"' in source
+    assert '"distinct_evidence_ids"' in source
+    assert "and returned_ids == expected_ids" not in source

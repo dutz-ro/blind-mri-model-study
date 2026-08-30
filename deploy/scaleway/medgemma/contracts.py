@@ -8,6 +8,9 @@ from output_contract import normalize_structural_result, validate_result_evidenc
 __all__ = [
     "normalize_structural_result",
     "canonical_eos_guard",
+    "require_finite_logits",
+    "generation_budget_exhausted",
+    "restore_decoder_config",
     "validate_result_evidence",
     "validate_window_payload",
 ]
@@ -45,6 +48,50 @@ def canonical_eos_guard(
         return filtered
 
     return guarded
+
+
+def require_finite_logits(input_ids: Any, scores: Any) -> Any:
+    """Fail closed when combined generation constraints ban every token.
+
+    Transformers applies schema, repetition and other logits processors in
+    sequence. If their intersection is empty, greedy decoding otherwise takes
+    an arbitrary token from an all-negative-infinity row and silently leaves
+    the JSON grammar. This processor must be installed last.
+    """
+    del input_ids
+    finite = scores.isfinite()
+    if not bool(finite.any(dim=-1).all().item()):
+        raise RuntimeError("Generation constraints removed every finite token.")
+    return scores
+
+
+def generation_budget_exhausted(
+    generated_tokens: int,
+    max_new_tokens: int,
+    tolerance: int = 8,
+) -> bool:
+    """Identify a structurally incomplete output that consumed its token budget."""
+    return generated_tokens >= max(0, max_new_tokens - tolerance)
+
+
+def restore_decoder_config(
+    prefix_allowed_tokens_fn: Any,
+    parser_config: Any,
+) -> Any:
+    """Restore the approved parser config after LMFE constructs TokenEnforcer.
+
+    lm-format-enforcer 0.11.3 replaces the supplied parser config with a new
+    config containing only the tokenizer alphabet. That silently resets field
+    ordering, whitespace and array limits to package defaults while runtime
+    provenance still reports the approved values. Preserve the tokenizer
+    alphabet but restore every approved behavioral setting.
+    """
+    token_enforcer = getattr(prefix_allowed_tokens_fn, "token_enforcer", None)
+    root_parser = getattr(token_enforcer, "root_parser", None)
+    if root_parser is None:
+        raise RuntimeError("Constrained decoder callback exposes no root parser.")
+    root_parser.config = parser_config
+    return prefix_allowed_tokens_fn
 
 
 def _expected_schema(approved: dict[str, Any]) -> str:

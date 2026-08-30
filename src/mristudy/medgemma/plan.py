@@ -16,7 +16,13 @@ from ..utils import canonical_json, sha256_bytes, utc_now
 from .evidence import ROLE_ORDER, assign_global_evidence, finalize_evidence_map
 from .evidence_trace import EVIDENCE_TRACE_POLICY
 from .integrity import recompute_plan_sha256
-from .output_contract import decoder_contract, output_contract, policy_digest
+from .output_contract import (
+    MAX_NEW_TOKENS,
+    decoder_contract,
+    generation_policy,
+    output_contract,
+    policy_digest,
+)
 from .windows import plan_windows
 
 
@@ -96,18 +102,12 @@ def build_medgemma_window_plan(
                 "overlap_previous": window.overlap_previous,
                 "overlap_next": window.overlap_next,
                 "output_schema": output_schema,
-                "max_new_tokens": 4096,
+                "max_new_tokens": MAX_NEW_TOKENS,
                 "maximum_structural_corrections": 2,
-                "generation": {
-                    "do_sample": False,
-                    "repetition_penalty": 1.05,
-                    "no_repeat_ngram_size": 8,
-                    "json_schema_enforced": True,
-                    "canonical_eos_only": True,
-                },
-                    "decoder": decoder,
-                    "output_contract": output_contract(),
-                    "model_repository": model_repository,
+                "generation": generation_policy(),
+                "decoder": decoder,
+                "output_contract": output_contract(),
+                "model_repository": model_repository,
                 "model_revision": model_revision,
                 "runtime_digest": runtime_digest,
             }

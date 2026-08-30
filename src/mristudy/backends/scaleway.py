@@ -71,6 +71,25 @@ def _identifiers(items: object) -> set[str]:
     return found
 
 
+def _new_resource_manifest(
+    plan: dict,
+    private_key: Path,
+    previous: dict | None = None,
+) -> dict:
+    manifest = {
+        "provider": "scaleway",
+        "plan_sha256": plan["plan_sha256"],
+        "zone": plan["zone"],
+        "project_id": plan["project_id"],
+        "created_at": utc_now(),
+        "resources": {},
+        "ssh_private_key": str(private_key),
+    }
+    if previous and previous.get("destroyed_resources"):
+        manifest["previous_destroyed_resources"] = previous["destroyed_resources"]
+    return manifest
+
+
 def verify_absence(zone: str, expected_absent: dict[str, object]) -> dict:
     """Prove that every named temporary resource is gone from the provider inventory.
 
@@ -326,17 +345,15 @@ def create_resources(plan: dict, manifest_path: Path, ssh_root: Path) -> dict:
 
         manifest = load_json(manifest_path)
         if manifest.get("plan_sha256") != plan["plan_sha256"]:
-            raise MRIStudyError("Existing Scaleway resource manifest belongs to another plan.")
+            active_resources = manifest.get("resources") or {}
+            if any(active_resources.values()):
+                raise MRIStudyError(
+                    "Existing Scaleway resource manifest belongs to another plan."
+                )
+            manifest = _new_resource_manifest(plan, private_key, manifest)
+            atomic_json(manifest_path, manifest)
     else:
-        manifest = {
-            "provider": "scaleway",
-            "plan_sha256": plan["plan_sha256"],
-            "zone": plan["zone"],
-            "project_id": plan["project_id"],
-            "created_at": utc_now(),
-            "resources": {},
-            "ssh_private_key": str(private_key),
-        }
+        manifest = _new_resource_manifest(plan, private_key)
         atomic_json(manifest_path, manifest)
 
     if not private_key.exists() or not public_key.exists():

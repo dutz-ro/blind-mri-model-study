@@ -4,6 +4,13 @@ from typing import Any, Protocol
 
 from ..errors import MRIStudyError
 from ..utils import atomic_json, utc_now
+from .output_contract import (
+    LONG_OUTPUT_PROBE_MIN_TOKENS,
+    LONG_OUTPUT_PROBE_RECORDS,
+    MAX_NEW_TOKENS,
+    OUTPUT_BUDGET_MARGIN_TOKENS,
+    decoder_output_bounds,
+)
 
 
 class ProbeClient(Protocol):
@@ -12,6 +19,10 @@ class ProbeClient(Protocol):
     def synthetic_dicom_probe(self) -> dict[str, Any]: ...
 
     def synthetic_json_probe(self) -> dict[str, Any]: ...
+
+    def synthetic_liveness_probe(self) -> dict[str, Any]: ...
+
+    def decoder_bounds_probe(self) -> dict[str, Any]: ...
 
 
 def run_required_probes(
@@ -99,13 +110,66 @@ def run_required_probes(
         or json_probe.get("output_contract") != expected_output_contract
     ):
         raise MRIStudyError("Synthetic constrained JSON probe failed.")
+    liveness_probe = client.synthetic_liveness_probe()
+    if (
+        not liveness_probe.get("passed")
+        or liveness_probe.get("oom")
+        or liveness_probe.get("schema_valid") is not True
+        or liveness_probe.get("record_count") != LONG_OUTPUT_PROBE_RECORDS
+        or liveness_probe.get("evidence_ids_covered") is not True
+        or liveness_probe.get("distinct_evidence_ids") != 32
+        or liveness_probe.get("generated_tokens", 0) < LONG_OUTPUT_PROBE_MIN_TOKENS
+        or liveness_probe.get("minimum_required_tokens") != LONG_OUTPUT_PROBE_MIN_TOKENS
+        or liveness_probe.get("input_images") != 32
+        or (liveness_probe.get("decoder_replay") or {}).get("accepted") is not True
+        or liveness_probe.get("generation", {}).get("repetition_penalty") != 1.0
+        or liveness_probe.get("generation", {}).get("no_repeat_ngram_size") != 0
+        or liveness_probe.get("decoder") is None
+        or liveness_probe.get("model") != expected_model
+        or liveness_probe.get("model_revision") != expected_revision
+        or liveness_probe.get("runtime_digest") != expected_runtime_digest
+        or liveness_probe.get("model_snapshot_manifest_sha256")
+        != expected_snapshot_manifest_sha256
+        or liveness_probe.get("approved_plan_sha256") != expected_run_plan_sha256
+        or liveness_probe.get("provision_plan_sha256") != expected_provision_plan_sha256
+        or liveness_probe.get("output_contract") != expected_output_contract
+    ):
+        raise MRIStudyError("Synthetic constrained-decoder liveness probe failed.")
+    bounds_probe = client.decoder_bounds_probe()
+    # A medical window failed after producing structurally valid output that did
+    # not fit the token budget, because nothing bounded the decodable result. The
+    # runtime now proves, with the tokenizer that will generate the windows, that
+    # its largest decodable output fits with margin before any image is sent.
+    if (
+        not bounds_probe.get("passed")
+        or bounds_probe.get("canonical_validation_errors")
+        or bounds_probe.get("max_new_tokens") != MAX_NEW_TOKENS
+        or bounds_probe.get("margin_tokens") != OUTPUT_BUDGET_MARGIN_TOKENS
+        or bounds_probe.get("output_bounds") != decoder_output_bounds()
+        or int(bounds_probe.get("required_tokens_with_margin") or MAX_NEW_TOKENS + 1)
+        > MAX_NEW_TOKENS
+        or bounds_probe.get("decoder") is None
+        or bounds_probe.get("model") != expected_model
+        or bounds_probe.get("model_revision") != expected_revision
+        or bounds_probe.get("runtime_digest") != expected_runtime_digest
+        or bounds_probe.get("model_snapshot_manifest_sha256")
+        != expected_snapshot_manifest_sha256
+        or bounds_probe.get("approved_plan_sha256") != expected_run_plan_sha256
+        or bounds_probe.get("provision_plan_sha256") != expected_provision_plan_sha256
+        or bounds_probe.get("output_contract") != expected_output_contract
+    ):
+        raise MRIStudyError("Decoder output budget probe failed.")
     report = {
         "completed_at": utc_now(),
         "image_probes": image_probes,
         "dicom_probe": dicom_probe,
         "json_decoder_probe": json_probe,
+        "decoder_liveness_probe": liveness_probe,
+        "decoder_bounds_probe": bounds_probe,
         "medical_data_authorized": False,
         "required_32_image_probe_passed": True,
+        "required_decoder_liveness_probe_passed": True,
+        "required_output_budget_probe_passed": True,
     }
     atomic_json(report_path, report)
     return report

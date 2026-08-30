@@ -16,7 +16,13 @@ import jsonschema
 import numpy as np
 import pydicom
 import torch
-from contracts import canonical_eos_guard, validate_window_payload
+from contracts import (
+    canonical_eos_guard,
+    generation_budget_exhausted,
+    require_finite_logits,
+    restore_decoder_config,
+    validate_window_payload,
+)
 from fastapi import FastAPI, HTTPException
 from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
 from lmformatenforcer.integrations.transformers import (
@@ -26,17 +32,26 @@ from lmformatenforcer.integrations.transformers import (
 from output_contract import (
     DECODER_CONFIG,
     DECODER_VERSION,
+    LONG_OUTPUT_PROBE_MIN_TOKENS,
+    LONG_OUTPUT_PROBE_RECORDS,
+    MAX_NEW_TOKENS,
+    OUTPUT_BUDGET_MARGIN_TOKENS,
     classify_output,
+    decoder_acceptance,
     decoder_contract,
+    decoder_output_bounds,
     decoder_schema,
+    generation_policy,
+    maximum_structural_output,
     output_contract,
+    strict_json_loads,
     structural_correction_errors,
     structural_correction_prompt,
 )
 from PIL import Image
 from pydantic import BaseModel
 from pydicom.pixels import apply_modality_lut, apply_voi_lut
-from transformers import pipeline
+from transformers import LogitsProcessor, pipeline
 
 app = FastAPI(title="MRIStudy MedGemma DICOM-aware runtime")
 
@@ -128,7 +143,7 @@ class AnalyzeWindowRequest(BaseModel):
     prompt: str
     prompt_sha256: str
     output_schema: str
-    max_new_tokens: int = 4096
+    max_new_tokens: int = MAX_NEW_TOKENS
     generation: dict[str, object]
     decoder: dict[str, object]
     output_contract: dict[str, object]
@@ -144,6 +159,10 @@ class SyntheticDicomProbeRequest(BaseModel):
 
 class SyntheticJsonProbeRequest(BaseModel):
     image_count: Literal[1] = 1
+
+
+class SyntheticLivenessProbeRequest(BaseModel):
+    record_count: Literal[96] = LONG_OUTPUT_PROBE_RECORDS
 
 
 @app.get("/health")
@@ -340,6 +359,11 @@ def _model_pipeline():
                     raise HTTPException(503, "MEDGEMMA_MODEL_PATH is required.")
                 if not os.path.isdir(MODEL_PATH):
                     raise HTTPException(503, "Configured MEDGEMMA_MODEL_PATH does not exist.")
+                # Torch 2.13 routes selected eager operations through Triton and
+                # compiles a helper extension on first use. The minimal runtime
+                # intentionally has no compiler, so keep those operations on
+                # their regular eager CUDA implementation.
+                torch.backends.python_native.disable_operations("bmm")
                 _pipeline = pipeline(
                     "image-text-to-text",
                     model=MODEL_PATH,
@@ -351,20 +375,25 @@ def _model_pipeline():
     return _pipeline
 
 
-def _schema_prefix_allowed_tokens_fn():
-    global _decoder_metadata, _tokenizer_data
+class _FiniteLogitsGuard(LogitsProcessor):
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        return require_finite_logits(input_ids, scores)
+
+
+def _prefix_allowed_tokens_fn(
+    schema: dict,
+    evidence_ids: list[str] | None = None,
+):
+    global _tokenizer_data
     model_pipeline = _model_pipeline()
     if _tokenizer_data is None:
         _tokenizer_data = build_token_enforcer_tokenizer_data(model_pipeline.tokenizer)
-    with open(RESULT_SCHEMA_PATH, encoding="utf-8") as handle:
-        schema = json.load(handle)
-    constrained_schema = decoder_schema(schema)
+    constrained_schema = decoder_schema(schema, evidence_ids)
     installed_version = importlib.metadata.version("lm-format-enforcer")
     if installed_version != DECODER_VERSION:
         raise RuntimeError(
             "Installed constrained-decoder version differs from the approved version."
         )
-    _decoder_metadata = decoder_contract(schema)
     base_callback = build_transformers_prefix_allowed_tokens_fn(
         _tokenizer_data,
         JsonSchemaParser(
@@ -372,11 +401,26 @@ def _schema_prefix_allowed_tokens_fn():
             config=CharacterLevelParserConfig(**DECODER_CONFIG),
         ),
     )
+    restore_decoder_config(
+        base_callback,
+        CharacterLevelParserConfig(
+            alphabet=_tokenizer_data.tokenizer_alphabet,
+            **DECODER_CONFIG,
+        ),
+    )
     tokenizer_eos = model_pipeline.tokenizer.eos_token_id
     if not isinstance(tokenizer_eos, int):
         raise RuntimeError("Tokenizer must provide one canonical EOS token ID.")
     configured_eos = model_pipeline.model.generation_config.eos_token_id
     return canonical_eos_guard(base_callback, tokenizer_eos, configured_eos)
+
+
+def _schema_prefix_allowed_tokens_fn(evidence_ids: list[str] | None = None):
+    global _decoder_metadata
+    with open(RESULT_SCHEMA_PATH, encoding="utf-8") as handle:
+        schema = json.load(handle)
+    _decoder_metadata = decoder_contract(schema)
+    return _prefix_allowed_tokens_fn(schema, evidence_ids)
 
 
 def _canonical_eos_token_id() -> int:
@@ -393,6 +437,69 @@ def _generated_text(output: object) -> str:
     if isinstance(generated, list):
         return str(generated[-1].get("content", ""))
     return str(generated or "")
+
+
+def _generated_token_count(text: str) -> int:
+    return len(_model_pipeline().tokenizer.encode(text, add_special_tokens=False))
+
+
+def _decoder_bounds_report() -> dict:
+    """Prove on this runtime that the largest decodable window output fits the budget.
+
+    The budget used to be a number chosen by hand while the schema bounded no
+    array and no free-text string, so no output size was ever guaranteed. This
+    recomputes the maximum output the constrained decoder can emit and measures
+    it with the tokenizer that will generate the medical windows. It runs before
+    any medical access and needs no inference.
+    """
+    with open(RESULT_SCHEMA_PATH, encoding="utf-8") as handle:
+        schema = json.load(handle)
+    window_images = _largest_approved_window()
+    evidence_ids = [f"image-{index + 1:06d}" for index in range(window_images)]
+    maximum = maximum_structural_output(schema, evidence_ids)
+    serialized = json.dumps(maximum, indent=2)
+    tokens = len(_model_pipeline().tokenizer.encode(serialized, add_special_tokens=False))
+    required = tokens + OUTPUT_BUDGET_MARGIN_TOKENS
+    schema_errors = jsonschema.Draft202012Validator(schema).iter_errors(maximum)
+    canonical_errors = [error.message for error in schema_errors]
+    return {
+        "passed": required <= MAX_NEW_TOKENS and not canonical_errors,
+        "maximum_structural_tokens": tokens,
+        "required_tokens_with_margin": required,
+        "max_new_tokens": MAX_NEW_TOKENS,
+        "margin_tokens": OUTPUT_BUDGET_MARGIN_TOKENS,
+        "maximum_structural_characters": len(serialized),
+        "maximum_structural_sha256": hashlib.sha256(serialized.encode()).hexdigest(),
+        "canonical_validation_errors": canonical_errors,
+        "window_images": window_images,
+        "output_bounds": decoder_output_bounds(),
+    }
+
+
+def _largest_approved_window() -> int:
+    """Size the bound by the widest approved window, not by an assumed constant."""
+    with open(APPROVED_PLAN_PATH, encoding="utf-8") as handle:
+        plan = json.load(handle)
+    sizes = [len(window.get("evidence_ids") or []) for window in plan.get("windows") or []]
+    if not sizes:
+        raise RuntimeError("Approved plan declares no window evidence.")
+    return max(sizes)
+
+
+@app.post("/decoder-bounds")
+def decoder_bounds() -> dict:
+    report = _decoder_bounds_report()
+    return {
+        **report,
+        "decoder": _decoder_identity(),
+        "output_contract": output_contract(),
+        "model": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+        "model_snapshot_manifest_sha256": MODEL_SNAPSHOT_MANIFEST_SHA256,
+        "runtime_digest": RUNTIME_DIGEST,
+        "approved_plan_sha256": APPROVED_PLAN_SHA256,
+        "provision_plan_sha256": PROVISION_PLAN_SHA256,
+    }
 
 
 def _synthetic_expected_result() -> dict:
@@ -584,7 +691,10 @@ def synthetic_json_probe(request: SyntheticJsonProbeRequest) -> dict:
                 "max_new_tokens": 512,
                 "do_sample": False,
                 "eos_token_id": _canonical_eos_token_id(),
-                "prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn(),
+                "prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn(
+                    ["image-000001"]
+                ),
+                "logits_processor": [_FiniteLogitsGuard()],
             },
         )
         raw_text = _generated_text(output)
@@ -620,6 +730,146 @@ def synthetic_json_probe(request: SyntheticJsonProbeRequest) -> dict:
             "total_seconds": time.monotonic() - started,
             "gpu_peak_memory_bytes": torch.cuda.max_memory_allocated(),
             "input_images": request.image_count,
+        },
+    }
+
+
+def _synthetic_liveness_schema(evidence_ids: list[str], record_count: int) -> dict:
+    description = (
+        "Synthetic non-medical repeated structural payload used only to prove that constrained "
+        "generation remains live and completes beyond the former 4096-token ceiling."
+    )
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["probe", "evidence"],
+        "properties": {
+            "probe": {"enum": ["constrained_decoder_liveness_v1"]},
+            "evidence": {
+                "type": "array",
+                "minItems": record_count,
+                "maxItems": record_count,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["export_id", "role", "description"],
+                    "properties": {
+                        "export_id": {"enum": evidence_ids},
+                        "role": {"enum": ["supporting"]},
+                        "description": {"enum": [description]},
+                    },
+                },
+            },
+        },
+    }
+
+
+@app.post("/synthetic-liveness-probe")
+def synthetic_liveness_probe(request: SyntheticLivenessProbeRequest) -> dict:
+    evidence_ids = [f"image-{index:06d}" for index in range(1, 33)]
+    expected_ids = [
+        evidence_ids[index % len(evidence_ids)] for index in range(request.record_count)
+    ]
+    schema = _synthetic_liveness_schema(evidence_ids, request.record_count)
+    content = [
+        {
+            "type": "text",
+            "text": (
+                "Synthetic non-medical 32-image constrained-generation liveness test. "
+                "Return one JSON object with probe constrained_decoder_liveness_v1 and exactly "
+                f"{request.record_count} evidence objects. Cycle through every supplied image ID "
+                "in ascending order until the array is complete. Every role is supporting and "
+                "every description must exactly match the schema enum. Ignore all visual content."
+            ),
+        }
+    ]
+    for index, evidence_id in enumerate(evidence_ids):
+        image = np.zeros((224, 224, 3), dtype=np.uint8)
+        inset = 16 + index % 24
+        image[inset : 224 - inset, inset : 224 - inset, :] = 128 + index
+        content.append({"type": "text", "text": evidence_id})
+        content.append({"type": "image", "image": Image.fromarray(image)})
+    content.append(
+        {
+            "type": "text",
+            "text": "Return the complete long JSON object now and stop after its closing brace.",
+        }
+    )
+    policy = generation_policy()
+    started = time.monotonic()
+    try:
+        torch.cuda.reset_peak_memory_stats()
+        output = _model_pipeline()(
+            [{"role": "user", "content": content}],
+            generate_kwargs={
+                "max_new_tokens": MAX_NEW_TOKENS,
+                "do_sample": policy["do_sample"],
+                "repetition_penalty": policy["repetition_penalty"],
+                "no_repeat_ngram_size": policy["no_repeat_ngram_size"],
+                "eos_token_id": _canonical_eos_token_id(),
+                "prefix_allowed_tokens_fn": _prefix_allowed_tokens_fn(schema),
+                "logits_processor": [_FiniteLogitsGuard()],
+            },
+        )
+        raw_text = _generated_text(output)
+        generated_tokens = _generated_token_count(raw_text)
+        replay = decoder_acceptance(raw_text, schema)
+        parsed = strict_json_loads(raw_text.strip()) if replay["accepted"] else None
+        if parsed is not None:
+            jsonschema.Draft202012Validator(schema).validate(parsed)
+        returned_ids = [
+            item.get("export_id")
+            for item in (parsed or {}).get("evidence", [])
+            if isinstance(item, dict)
+        ]
+    except Exception as error:
+        if isinstance(error, torch.OutOfMemoryError):
+            return {"passed": False, "oom": True, "error_class": type(error).__name__}
+        raise HTTPException(
+            500, f"Synthetic decoder liveness inference failed: {type(error).__name__}"
+        ) from error
+    return {
+        # Acceptance covers what the constrained decoder guarantees: a complete
+        # record set, every identifier drawn from the approved enumeration, all
+        # of them exercised, and generation that stays live far past the former
+        # ceiling. It deliberately does not require the exact ascending cycle.
+        # That asks the model to count to 96, which no decoder can enforce; the
+        # first real execution produced 96 valid records over 7_426 tokens and
+        # was rejected only for ordering, which proves nothing about liveness.
+        # The ordering result is still reported, because a collapse onto a single
+        # identifier would show up as lost coverage.
+        "passed": (
+            replay["accepted"]
+            and parsed is not None
+            and len(returned_ids) == request.record_count
+            and set(returned_ids) == set(expected_ids)
+            and generated_tokens >= LONG_OUTPUT_PROBE_MIN_TOKENS
+        ),
+        "oom": False,
+        "schema_valid": parsed is not None,
+        "record_count": len(returned_ids),
+        "evidence_cycle_exact": returned_ids == expected_ids,
+        "distinct_evidence_ids": len(set(returned_ids)),
+        "evidence_ids_covered": set(returned_ids) == set(expected_ids),
+        "generated_tokens": generated_tokens,
+        "minimum_required_tokens": LONG_OUTPUT_PROBE_MIN_TOKENS,
+        "input_images": len(evidence_ids),
+        "decoder_replay": replay,
+        "raw_text_sha256": hashlib.sha256(raw_text.encode()).hexdigest(),
+        "raw_text_length": len(raw_text),
+        "generation": policy,
+        "decoder": _decoder_identity(),
+        "output_contract": output_contract(),
+        "model": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+        "model_snapshot_manifest_sha256": MODEL_SNAPSHOT_MANIFEST_SHA256,
+        "runtime_digest": RUNTIME_DIGEST,
+        "approved_plan_sha256": APPROVED_PLAN_SHA256,
+        "provision_plan_sha256": PROVISION_PLAN_SHA256,
+        "metrics": {
+            "total_seconds": time.monotonic() - started,
+            "gpu_peak_memory_bytes": torch.cuda.max_memory_allocated(),
+            "input_images": len(evidence_ids),
         },
     }
 
@@ -664,15 +914,34 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
                     "repetition_penalty": request.generation["repetition_penalty"],
                     "no_repeat_ngram_size": request.generation["no_repeat_ngram_size"],
                     "eos_token_id": _canonical_eos_token_id(),
-                    "prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn(),
+                    "prefix_allowed_tokens_fn": _schema_prefix_allowed_tokens_fn(
+                        request.evidence_ids
+                    ),
+                    "logits_processor": [_FiniteLogitsGuard()],
                 },
             )
             generation_seconds = time.monotonic() - generation_started
             total_generation_seconds += generation_seconds
             raw_text = _generated_text(output)
+            generated_tokens = _generated_token_count(raw_text)
+            decoder_replay = decoder_acceptance(
+                raw_text,
+                result_schema,
+                request.evidence_ids,
+            )
             decision = classify_output(raw_text, result_schema, request.evidence_ids)
-            parsed = decision.result
-            schema_errors = structural_correction_errors(decision)
+            parsed = decision.result if decoder_replay["accepted"] else None
+            schema_errors = (
+                structural_correction_errors(decision)
+                if decoder_replay["accepted"]
+                else ["decoder_contract_violated"]
+            )
+            exhausted = generation_budget_exhausted(
+                generated_tokens,
+                request.max_new_tokens,
+            )
+            if decision.status == "truncated_json" and exhausted:
+                schema_errors = ["token_budget_exhausted"]
             selected_candidate = (
                 decision.candidates[decision.selected_candidate_index]
                 if decision.selected_candidate_index is not None
@@ -689,6 +958,8 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
                     "normalization_actions": normalization_actions,
                     "validation_errors": schema_errors,
                     "generation_seconds": generation_seconds,
+                    "generated_tokens": generated_tokens,
+                    "token_budget_exhausted": exhausted,
                     "output_contract": {
                         "extraction_policy": decision.extraction_policy,
                         "normalization_policy": decision.normalization_policy,
@@ -699,10 +970,24 @@ def analyze_window(request: AnalyzeWindowRequest) -> dict:
                         "selected_candidate_sha256": decision.selected_candidate_sha256,
                         "selected_semantic_sha256": decision.selected_semantic_sha256,
                         "candidates": list(decision.candidates),
+                        "decoder_replay": decoder_replay,
                     },
                 }
             )
+            if not decoder_replay["accepted"]:
+                break
+            if exhausted:
+                break
             if not schema_errors:
+                break
+            if any(
+                item["raw_text"] == raw_text for item in attempts[:-1]
+            ):
+                # Greedy decoding is deterministic: an attempt that reproduces an
+                # earlier response byte for byte proves the correction prompt
+                # changed nothing the model acted on. A real window burned three
+                # identical 275-second generations this way before failing.
+                schema_errors = ["deterministic_repeat"]
                 break
             if attempt < maximum_corrections:
                 prompt = _correction_prompt(request.prompt, attempt + 1, schema_errors, raw_text)

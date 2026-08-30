@@ -33,10 +33,10 @@ from .medgemma.integrity import (
 from .medgemma.plan import build_medgemma_window_plan
 from .medgemma.probes import run_required_probes
 from .medgemma.replay import replay_acceptance, replay_historical_runs
-from .medgemma.runner import run_window_plan
+from .medgemma.runner import execute_window, run_window_plan
 from .paths import StudyPaths
 from .profiles import load_profile_by_name
-from .prompts import medgemma_prompt_for_profile
+from .prompts import medgemma_prompt_for_profile, medgemma_window_prompt
 from .provenance import append_event
 from .state import Stage, StudyState
 from .utils import atomic_json, load_json
@@ -242,6 +242,7 @@ def register_backend_commands(
         ]
         report["medical_data_authorized"] = bool(
             report["required_32_image_probe_passed"]
+            and report["required_decoder_liveness_probe_passed"]
             and report["dicom_probe"].get("passed")
             and dicomweb.get("instances") == primary["source_instance_count"]
         )
@@ -453,6 +454,78 @@ def register_backend_commands(
             {"run_id": run_id, "windows": final["window_count"]},
         )
         typer.echo(json.dumps({"run_id": run_id, "coverage": final["coverage"]}, indent=2))
+
+    @backend_app.command("medgemma-smoke-window")
+    def medgemma_smoke_window(
+        study_id: Annotated[str, typer.Option("--study")],
+        window_id: Annotated[str | None, typer.Option("--window")] = None,
+    ) -> None:
+        """Execute exactly one approved medical window before committing to all of them.
+
+        Every runtime defect in this study was found after a full run had already
+        started, because nothing between the synthetic probes and the complete
+        26-window run exercised a real window end to end. One window costs about
+        ninety seconds and would have caught each of them.
+
+        The window is written to its own run directory, is never locked, and is
+        never integrated into a series result.
+        """
+        paths, state = context_loader(study_id)
+        if state.stage != Stage.DICOM_STORE_VERIFIED:
+            raise MRIStudyError("MedGemma requires a verified DICOM-aware backend.")
+        run_plan = load_json(paths.state / "medgemma-run-plan.json")
+        require_complete_plan(run_plan)
+        provision = load_json(paths.state / "scaleway-provision-plan.json")
+        if provision.get("medgemma_run_plan_sha256") != run_plan["plan_sha256"]:
+            raise MRIStudyError("Provision plan is not bound to the current MedGemma plan.")
+        preflight = load_json(paths.manifests / "medgemma-window-probes.json")
+        if not preflight.get("medical_data_authorized"):
+            raise MRIStudyError("Medical data is not authorized by synthetic probes.")
+        if preflight.get("run_plan_sha256") != run_plan["plan_sha256"]:
+            raise MRIStudyError("Synthetic probe report is stale for this MedGemma plan.")
+        windows = run_plan["windows"]
+        window = next(
+            (item for item in windows if item["window_id"] == window_id),
+            None if window_id else windows[0],
+        )
+        if window is None:
+            raise MRIStudyError("Requested window is not part of the approved plan.")
+        evidence_manifest = load_json(paths.manifests / "medgemma-evidence-map.json")
+        evidence_map = require_valid_evidence_map(evidence_manifest, run_plan)
+        profile = load_profile_by_name(state.profile)
+        run_dir = paths.runs / f"medgemma-smoke-{uuid.uuid4().hex[:12]}"
+        windows_dir = run_dir / "windows"
+        windows_dir.mkdir(parents=True, mode=0o700)
+        atomic_json(run_dir / "run-plan.json", run_plan)
+        result = execute_window(
+            MedGemmaHttpClient(timeout=3600),
+            window,
+            medgemma_window_prompt(medgemma_prompt_for_profile(profile), window),
+            windows_dir,
+            run_plan["plan_sha256"],
+            provision["plan_sha256"],
+            provision["runtime"]["model_snapshot_manifest_sha256"],
+            evidence_map,
+            run_plan["evidence_map_sha256"],
+        )
+        append_event(
+            paths.logs / "provenance.jsonl",
+            "medgemma-smoke-window",
+            "complete",
+            {"run_dir": run_dir.name, "window_id": window["window_id"]},
+        )
+        typer.echo(
+            json.dumps(
+                {
+                    "run_dir": str(run_dir),
+                    "window_id": window["window_id"],
+                    "finding_count": len(result["canonical_result"].get("findings") or []),
+                    "evidence_summary": result["evidence_summary"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
 
     @backend_app.command("migrate-plan")
     def migrate_plan(
@@ -746,11 +819,11 @@ def register_backend_commands(
             load_json(paths.state / "scaleway-resources.json"),
         )
         atomic_json(paths.manifests / "scaleway-cleanup.json", result)
+        resources = load_json(paths.state / "scaleway-resources.json")
+        resources["destroyed_resources"] = resources.get("resources") or {}
+        resources["resources"] = {}
+        atomic_json(paths.state / "scaleway-resources.json", resources)
         if failed_pre_lock_run:
-            resources = load_json(paths.state / "scaleway-resources.json")
-            resources["destroyed_resources"] = resources.get("resources") or {}
-            resources["resources"] = {}
-            atomic_json(paths.state / "scaleway-resources.json", resources)
             approval = paths.state / "backend-egress.approval.json"
             if approval.exists():
                 atomic_json(
