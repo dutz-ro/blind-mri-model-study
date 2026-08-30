@@ -12,7 +12,69 @@ import {
 import { badge, element, modelLabel, startPage } from "./page.js";
 import { vascularLine } from "./vascular.js";
 
-let dialogState = { evidence: [], index: 0, zoom: 1, dictionary: null };
+const POSITIVE_STATUSES = new Set(["suspected", "probable", "confirmed"]);
+
+let dialogState = {
+  evidence: [],
+  index: 0,
+  zoom: 1,
+  dictionary: null,
+  finding: null,
+};
+
+function positiveFindings(model) {
+  return model.findings.filter((finding) =>
+    POSITIVE_STATUSES.has(finding.clinical.tear_status));
+}
+
+function approximateRegion(clinical, seriesRole) {
+  const segment = clinical.segment || "indeterminate";
+  const sagittal = ["primary-volume", "sagittal-meniscus", "anatomy-correlation"]
+    .includes(seriesRole);
+  if (sagittal) {
+    const cx = {
+      anterior_horn: 64,
+      body: 50,
+      posterior_horn: 36,
+      anterior_root: 60,
+      posterior_root: 40,
+    }[segment] ?? 50;
+    return {
+      cx,
+      cy: 59,
+      rx: segment === "multiple_segments" ? 25 : 15,
+      ry: 11,
+    };
+  }
+  if (seriesRole === "coronal-confirmation") {
+    return { cx: 38, cy: 58, rx: 16, ry: 11 };
+  }
+  if (seriesRole === "axial-confirmation") {
+    return { cx: 40, cy: 55, rx: 18, ry: 13 };
+  }
+  return { cx: 50, cy: 58, rx: 23, ry: 13 };
+}
+
+function renderApproximateOverlay(dictionary, finding, entry) {
+  const canvas = document.getElementById("image-canvas");
+  canvas.querySelector(".anatomical-overlay")?.remove();
+  if (!finding || !entry) {
+    return;
+  }
+  const region = approximateRegion(finding.clinical, entry.seriesRole);
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(namespace, "svg");
+  svg.classList.add("anatomical-overlay");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("aria-label", t(dictionary, "dialog.approximateRegion"));
+  const ellipse = document.createElementNS(namespace, "ellipse");
+  ellipse.setAttribute("cx", String(region.cx));
+  ellipse.setAttribute("cy", String(region.cy));
+  ellipse.setAttribute("rx", String(region.rx));
+  ellipse.setAttribute("ry", String(region.ry));
+  svg.append(ellipse);
+  canvas.append(svg);
+}
 
 function modelText(dictionary, value) {
   const wrap = element("span", "model-text");
@@ -133,21 +195,24 @@ function findingCard(dictionary, finding, index, onOpen) {
 }
 
 function renderDialogImage() {
-  const { evidence, index, zoom, dictionary } = dialogState;
+  const { evidence, index, zoom, dictionary, finding } = dialogState;
   const entry = evidence[index];
   const image = document.getElementById("main-evidence");
+  const canvas = document.getElementById("image-canvas");
   const meta = document.getElementById("evidence-meta");
   const zoomLabel = document.getElementById("zoom-label");
   meta.replaceChildren();
   if (!entry) {
     meta.append(element("p", null, t(dictionary, "dialog.noEvidence")));
     image.removeAttribute("src");
+    canvas.querySelector(".anatomical-overlay")?.remove();
     return;
   }
   image.src = `evidence/${entry.image}`;
   image.alt = t(dictionary, "dialog.imageAlt");
-  image.style.setProperty("--zoom", String(zoom));
+  canvas.style.transform = `scale(${zoom})`;
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+  renderApproximateOverlay(dictionary, finding, entry);
 
   const list = element("dl", "evidence-meta-list");
   const rows = [
@@ -162,6 +227,9 @@ function renderDialogImage() {
     list.append(element("dd", null, value === null || value === undefined ? "—" : String(value)));
   }
   meta.append(list);
+  meta.append(
+    element("p", "approximation-warning", t(dictionary, "dialog.approximationWarning")),
+  );
   if (entry.description) {
     const description = element("div", "evidence-description");
     description.append(element("h4", null, t(dictionary, "dialog.meta.description")));
@@ -192,7 +260,7 @@ function renderDialogImage() {
 
 function openDialog(dictionary, finding, model) {
   const dialog = document.getElementById("evidence-dialog");
-  dialogState = { evidence: finding.evidence, index: 0, zoom: 1, dictionary };
+  dialogState = { evidence: finding.evidence, index: 0, zoom: 1, dictionary, finding };
   document.getElementById("dialog-model").textContent = `${modelLabel(dictionary, model)} · ${t(dictionary, "dialog.eyebrow")}`;
   document.getElementById("dialog-title").textContent = findingTitle(dictionary, finding.clinical);
   renderDialogImage();
@@ -271,8 +339,7 @@ function modelSource(dictionary, model) {
 }
 
 function modelSummary(dictionary, model) {
-  const positive = model.findings.filter((finding) =>
-    ["suspected", "probable"].includes(finding.clinical.tear_status));
+  const positive = positiveFindings(model);
   const historical = positive.filter((finding) => finding.provenance?.historical);
   const verified = positive.filter((finding) => !finding.provenance?.historical);
   const card = element("article", "model-overview-card");
@@ -301,6 +368,7 @@ function modelSummary(dictionary, model) {
 }
 
 function modelSection(dictionary, model) {
+  const findings = positiveFindings(model);
   const section = element("section", "model-arm-section");
   const head = element("div", "model-arm-heading");
   const title = element("div");
@@ -312,14 +380,14 @@ function modelSection(dictionary, model) {
     element(
       "span",
       "finding-total",
-      t(dictionary, "models.findingCount", { count: model.findings.length }),
+      t(dictionary, "models.findingCount", { count: findings.length }),
     ),
   );
   section.append(head);
-  if (!model.findings.length) {
+  if (!findings.length) {
     section.append(element("p", "empty-state", t(dictionary, "index.noFindings")));
   }
-  model.findings.forEach((finding, index) => {
+  findings.forEach((finding, index) => {
     section.append(
       findingCard(dictionary, finding, index, (selected) =>
         openDialog(dictionary, selected, model)),

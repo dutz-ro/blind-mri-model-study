@@ -197,7 +197,7 @@ function renderHeader(dictionary, bundle, language) {
 
 function positiveFindings(model) {
   return model.findings.filter((finding) =>
-    ["suspected", "probable"].includes(finding.clinical.tear_status));
+    ["suspected", "probable", "confirmed"].includes(finding.clinical.tear_status));
 }
 
 function findingFocus(dictionary, findings) {
@@ -349,9 +349,6 @@ function renderConclusion(dictionary, bundle, model) {
   const withTear = positiveFindings(model);
   const historicalTears = withTear.filter((item) => item.provenance?.historical);
   const finalTears = withTear.filter((item) => !item.provenance?.historical);
-  const undetermined = model.findings.filter((item) =>
-    ["indeterminate", "not_evaluable"].includes(item.clinical.tear_status),
-  );
 
   if (historicalTears.length && !finalTears.length) {
     host.append(
@@ -372,15 +369,6 @@ function renderConclusion(dictionary, bundle, model) {
         withTear.length
           ? t(dictionary, "report.conclusion.someTear", { side, count: withTear.length })
           : t(dictionary, "report.conclusion.noTear", { side }),
-      ),
-    );
-  }
-  if (undetermined.length) {
-    host.append(
-      element(
-        "p",
-        null,
-        t(dictionary, "report.conclusion.indeterminate", { count: undetermined.length }),
       ),
     );
   }
@@ -430,8 +418,9 @@ function render({ bundle, dictionary, language }) {
     document.getElementById("report-results").replaceChildren();
     document.getElementById("report-conclusion").replaceChildren();
     if (model && model.findings.length) {
-      panelHost.append(vascularPanel(dictionary, model.findings));
-      renderResults(dictionary, model);
+      const positives = positiveFindings(model);
+      panelHost.append(vascularPanel(dictionary, positives));
+      renderResults(dictionary, { ...model, findings: positives });
       renderConclusion(dictionary, bundle, model);
     }
   }

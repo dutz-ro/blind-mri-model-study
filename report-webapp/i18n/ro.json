@@ -44,8 +44,8 @@
       "note": "Apartenența la o fereastră nu transformă automat o imagine în dovadă individuală."
     },
     "findingsHeading": "Ce a raportat modelul",
-    "findingsNote": "Fiecare constatare este afișată integral, inclusiv cele fără dovadă utilizabilă, etichetate ca atare.",
-    "noFindings": "Modelul nu a raportat nicio constatare.",
+    "findingsNote": "Sunt afișate exclusiv variantele suspectate, probabile sau confirmate. Variantele absente, nedeterminate și neevaluabile sunt ascunse.",
+    "noFindings": "Modelul nu a raportat nicio variantă suspectată, probabilă sau confirmată.",
     "evidenceButton": "Deschide imaginile constatării",
     "evidenceButtonHint": "susținere, context și contra-dovezi",
     "limitationsHeading": "Limitări declarate de model",
@@ -70,8 +70,8 @@
       "medgemma-dicom": "MedGemma DICOM"
     },
     "independentArm": "Braț independent",
-    "findingCount": "{count} constatări integrate",
-    "positiveCount": "{count} variante suspectate sau probabile",
+    "findingCount": "{count} variante suspectate, probabile sau confirmate",
+    "positiveCount": "{count} variante suspectate, probabile sau confirmate",
     "historicalCount": "Dintre acestea, {count} sunt variante MedGemma istorice; lock-ul final conține {final} variante pozitive.",
     "historicalFinding": "Variantă pozitivă dintr-o rulare MedGemma anterioară. Nu aparține lock-ului final; este păstrată pentru a nu pierde dezacordul dintre rulări.",
     "historicalShort": "VARIANTĂ ISTORICĂ, ÎN AFARA LOCK-ULUI FINAL",
@@ -94,6 +94,8 @@
     "title": "Galerie de imagini",
     "close": "Închide",
     "warning": "Imaginile sunt secțiunile citate de model. Nu sunt coordonate furnizate de model, segmentări sau confirmări radiologice.",
+    "approximateRegion": "Contur anatomic orientativ al segmentului raportat",
+    "approximationWarning": "Cercul indică aproximativ segmentul anatomic raportat, pe baza meniscului, segmentului și planului imaginii. Modelul nu a furnizat coordonate; conturul nu localizează exact leziunea și nu este o adnotare radiologică.",
     "imageAlt": "Secțiune IRM anonimizată",
     "meta": {
       "exportId": "Identificator",

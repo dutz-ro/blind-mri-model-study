@@ -218,7 +218,11 @@ h1 .accent { color: var(--coral); font-style: italic; }
 .model-text-badge { margin-left: 8px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 
 /* Evidence dialog ------------------------------------------------------- */
-#main-evidence { --zoom: 1; width: 100%; transform: scale(var(--zoom)); transform-origin: center; transition: transform .12s ease-out; }
+#main-evidence { width: 100%; }
+.image-canvas { transform: scale(1); }
+.anatomical-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.anatomical-overlay ellipse { fill: rgba(237,106,87,.08); stroke: #ff6d59; stroke-width: 1.25; stroke-dasharray: 3 1.5; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 2px rgba(0,0,0,.9)); }
+.approximation-warning { margin-top: 16px; padding: 11px 12px; border-left: 3px solid var(--amber); background: rgba(211,151,54,.12); color: #f1d59f !important; line-height: 1.5; }
 .evidence-meta-list { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 16px; }
 .evidence-meta-list dt { color: var(--muted); font-size: 13px; }
 .evidence-meta-list dd { margin: 0; font-size: 14px; font-weight: 600; word-break: break-word; }

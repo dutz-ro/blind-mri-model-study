@@ -44,8 +44,8 @@
       "note": "Belonging to a window does not by itself make an image individual evidence."
     },
     "findingsHeading": "What the model reported",
-    "findingsNote": "Every finding is shown in full, including those without usable evidence, which are labelled as such.",
-    "noFindings": "The model reported no findings.",
+    "findingsNote": "Only suspected, probable or confirmed variants are shown. Absent, indeterminate and non-evaluable variants are hidden.",
+    "noFindings": "The model reported no suspected, probable or confirmed variant.",
     "evidenceButton": "Open the images for this finding",
     "evidenceButtonHint": "supporting, context and counter evidence",
     "limitationsHeading": "Limitations stated by the model",
@@ -70,8 +70,8 @@
       "medgemma-dicom": "MedGemma DICOM"
     },
     "independentArm": "Independent arm",
-    "findingCount": "{count} integrated findings",
-    "positiveCount": "{count} suspected or probable variants",
+    "findingCount": "{count} suspected, probable or confirmed variants",
+    "positiveCount": "{count} suspected, probable or confirmed variants",
     "historicalCount": "Of these, {count} are historical MedGemma variants; the final lock contains {final} positive variants.",
     "historicalFinding": "Positive variant from an earlier MedGemma run. It is not part of the final lock; it is retained so disagreement between runs is not lost.",
     "historicalShort": "HISTORICAL VARIANT, OUTSIDE THE FINAL LOCK",
@@ -94,6 +94,8 @@
     "title": "Image gallery",
     "close": "Close",
     "warning": "These are the slices the model cited. They are not model-provided coordinates, segmentations, or radiological confirmation.",
+    "approximateRegion": "Approximate anatomical outline of the reported segment",
+    "approximationWarning": "The circle approximately indicates the reported anatomical segment from the meniscus, segment and image plane. The model supplied no coordinates; the outline does not locate the lesion exactly and is not a radiological annotation.",
     "imageAlt": "De-identified MRI slice",
     "meta": {
       "exportId": "Identifier",

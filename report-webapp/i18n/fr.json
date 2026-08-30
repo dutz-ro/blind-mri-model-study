@@ -44,8 +44,8 @@
       "note": "L'appartenance à une fenêtre ne fait pas à elle seule d'une image une preuve individuelle."
     },
     "findingsHeading": "Ce que le modèle a rapporté",
-    "findingsNote": "Chaque constatation est affichée intégralement, y compris celles sans preuve exploitable, qui sont signalées comme telles.",
-    "noFindings": "Le modèle n'a rapporté aucune constatation.",
+    "findingsNote": "Seules les variantes suspectées, probables ou confirmées sont affichées. Les variantes absentes, indéterminées et non évaluables sont masquées.",
+    "noFindings": "Le modèle n'a rapporté aucune variante suspectée, probable ou confirmée.",
     "evidenceButton": "Ouvrir les images de la constatation",
     "evidenceButtonHint": "appui, contexte et contre-preuves",
     "limitationsHeading": "Limites déclarées par le modèle",
@@ -70,8 +70,8 @@
       "medgemma-dicom": "MedGemma DICOM"
     },
     "independentArm": "Bras indépendant",
-    "findingCount": "{count} constatations intégrées",
-    "positiveCount": "{count} variantes suspectées ou probables",
+    "findingCount": "{count} variantes suspectées, probables ou confirmées",
+    "positiveCount": "{count} variantes suspectées, probables ou confirmées",
     "historicalCount": "Parmi celles-ci, {count} sont des variantes MedGemma historiques ; le verrou final contient {final} variantes positives.",
     "historicalFinding": "Variante positive issue d'une exécution MedGemma antérieure. Elle n'appartient pas au verrou final ; elle est conservée afin de ne pas perdre le désaccord entre les exécutions.",
     "historicalShort": "VARIANTE HISTORIQUE, HORS DU VERROU FINAL",
@@ -94,6 +94,8 @@
     "title": "Galerie d'images",
     "close": "Fermer",
     "warning": "Ces images sont les coupes citées par le modèle. Ce ne sont ni des coordonnées fournies par le modèle, ni des segmentations, ni une confirmation radiologique.",
+    "approximateRegion": "Contour anatomique approximatif du segment rapporté",
+    "approximationWarning": "Le cercle indique approximativement le segment anatomique rapporté à partir du ménisque, du segment et du plan de l'image. Le modèle n'a fourni aucune coordonnée ; le contour ne localise pas exactement la lésion et ne constitue pas une annotation radiologique.",
     "imageAlt": "Coupe IRM anonymisée",
     "meta": {
       "exportId": "Identifiant",
