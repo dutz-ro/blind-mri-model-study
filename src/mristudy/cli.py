@@ -39,7 +39,7 @@ from .provenance import append_event
 from .report_bundle import (
     build_viewer_bundle,
     evidence_summary_from_multiplanar_provenance,
-    load_locked_model_results,
+    load_locked_model_bundle_inputs,
     study_metadata,
 )
 from .reports import render_json_report
@@ -819,12 +819,13 @@ def viewer_bundle(
     manifest_path = paths.manifests / "medgemma-evidence-map.json"
     if not manifest_path.exists():
         raise MRIStudyError("This study has no MedGemma evidence map.")
-    model_results = load_locked_model_results(paths.manifests, paths.runs)
+    model_results, evidence_summaries, model_metadata = load_locked_model_bundle_inputs(
+        paths.manifests, paths.runs, paths.state
+    )
     if not model_results:
         raise MRIStudyError("No locked structured model result was found.")
     plan_path = paths.state / "medgemma-run-plan.json"
     run_plan = load_json(plan_path) if plan_path.exists() else None
-    evidence_summaries = {}
     study = {}
     medgemma_lock = paths.manifests / "medgemma-results-lock.json"
     if medgemma_lock.exists():
@@ -835,11 +836,35 @@ def viewer_bundle(
         if run_id and isinstance(provenance_pointer, str):
             provenance_path = paths.runs / run_id / provenance_pointer
             if provenance_path.exists():
-                evidence_summaries["medgemma-dicom"] = (
-                    evidence_summary_from_multiplanar_provenance(
-                        load_json(provenance_path)
-                    )
+                final_summary = evidence_summary_from_multiplanar_provenance(
+                    load_json(provenance_path)
                 )
+                historical_summary = evidence_summaries.pop(
+                    "medgemma-dicom-historical", {"findings": []}
+                )
+                final_summary["findings"].extend(
+                    historical_summary.get("findings") or []
+                )
+                for key, value in (historical_summary.get("counts") or {}).items():
+                    final_summary["counts"][key] = (
+                        final_summary["counts"].get(key, 0) + value
+                    )
+                final_summary["total_findings"] += historical_summary.get(
+                    "total_findings", 0
+                )
+                final_summary["traceable_findings"] += historical_summary.get(
+                    "traceable_findings", 0
+                )
+                final_summary["evidence_coverage_percent"] = round(
+                    100.0
+                    * final_summary["traceable_findings"]
+                    / max(1, final_summary["total_findings"]),
+                    2,
+                )
+                final_summary["historical_findings"] = len(
+                    historical_summary.get("findings") or []
+                )
+                evidence_summaries["medgemma-dicom"] = final_summary
     bundle = build_viewer_bundle(
         model_results,
         load_json(manifest_path),
@@ -848,6 +873,7 @@ def viewer_bundle(
         run_plan=run_plan,
         export_images=not skip_images,
         evidence_summaries=evidence_summaries,
+        model_metadata=model_metadata,
         study=study,
     )
     atomic_json(paths.reports / "viewer" / "report-bundle.json", bundle)

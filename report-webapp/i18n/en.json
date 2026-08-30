@@ -63,6 +63,32 @@
       "unverified": "unconfirmed provenance"
     }
   },
+  "models": {
+    "names": {
+      "gpt-sol": "GPT-5.6-sol",
+      "grok": "Grok-4.5",
+      "medgemma-dicom": "MedGemma DICOM"
+    },
+    "independentArm": "Independent arm",
+    "findingCount": "{count} integrated findings",
+    "positiveCount": "{count} suspected or probable variants",
+    "historicalCount": "Of these, {count} are historical MedGemma variants; the final lock contains {final} positive variants.",
+    "historicalFinding": "Positive variant from an earlier MedGemma run. It is not part of the final lock; it is retained so disagreement between runs is not lost.",
+    "historicalShort": "HISTORICAL VARIANT, OUTSIDE THE FINAL LOCK",
+    "source": {
+      "generalist": "{count} exported images, grouped into {groups} batches",
+      "dicom": "{count} DICOM slices, grouped into {groups} contiguous windows"
+    },
+    "disagreementHeading": "DISAGREEMENT BETWEEN ARMS AND RUNS",
+    "disagreementLede": "Models and runs are presented separately. An older positive finding is not erased by a later run, and a later run does not automatically validate the older finding.",
+    "noPositive": "This arm contains no suspected or probable variant.",
+    "focus": "First positive variant shown: {meniscus} meniscus, {segment}, {pattern} pattern.",
+    "medgemmaHistory": "MedGemma retains {historical} historical positive variants and {final} positive variants in the final lock. Historical variants are labelled and are not presented as output from the final run.",
+    "medgemmaFinalVsHistorical": "The final MedGemma lock for the {side} knee contains no suspected or probable variant; the longitudinal integration separately retains {historical} positive variants from earlier runs.",
+    "noConsensus": "There is no shared verdict. GPT and Grok report positive variants; the final MedGemma lock does not reproduce them, while earlier MedGemma runs reported positive variants with weaker traceability.",
+    "reportForHeading": "Displayed arm report",
+    "selectedReport": "The conclusion below belongs exclusively to the {model} arm."
+  },
   "dialog": {
     "eyebrow": "Evidence",
     "title": "Image gallery",
@@ -176,7 +202,7 @@
       "someTear": "Exploratory analysis of the menisci of the {side} knee identified findings with a suspected tear ({count}).",
       "indeterminate": "Findings that remain undetermined because of resolution, plane or window limitations: {count}.",
       "vascular": "The vascular zones reported are anatomical estimates: {summary}",
-      "traceability": "Traceability: {verified} of {total} window-level findings carry verified evidence from their own window ({percent}%), with no citation outside the approved plan.",
+      "traceability": "Traceability in this arm: {verified} of {total} integrated findings carry verified or recovered evidence ({percent}%). Cross-batch/window citations and variants without citations are labelled separately.",
       "boundary": "This document is not a diagnosis, does not determine repairability, and makes no treatment recommendation."
     },
     "print": "Print",

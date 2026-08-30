@@ -3,8 +3,11 @@ from mristudy.medgemma.evidence_trace import (
     STATUS_UNVERIFIED,
     STATUS_VERIFIED,
 )
+from mristudy.profiles import load_profile_by_name
 from mristudy.report_bundle import (
+    _historical_medgemma_variants,
     evidence_summary_from_multiplanar_provenance,
+    evidence_summary_from_series_provenance,
     study_metadata,
 )
 
@@ -136,3 +139,129 @@ def test_study_metadata_refuses_a_side_it_cannot_derive() -> None:
     }
     assert study_metadata(lock, plan)["laterality"] == "indeterminate"
     assert study_metadata({"run": "run"}, None)["laterality"] == "indeterminate"
+
+
+def test_series_summary_preserves_batch_scope() -> None:
+    summary = evidence_summary_from_series_provenance(
+        {
+            "finding_provenance": [
+                {
+                    "integrated_finding_id": "gpt-finding-1",
+                    "evidence_dispositions": [
+                        {
+                            "export_id": "image-000003",
+                            "scope_status": "current_window",
+                            "source_status": "explicit",
+                            "integration_link_eligible": True,
+                        }
+                    ],
+                    "link_eligible_evidence_ids": ["image-000003"],
+                },
+                {
+                    "integrated_finding_id": "gpt-finding-2",
+                    "evidence_dispositions": [
+                        {
+                            "export_id": "image-000015",
+                            "scope_status": "distant_same_series",
+                            "source_status": "explicit",
+                            "integration_link_eligible": False,
+                        }
+                    ],
+                    "link_eligible_evidence_ids": [],
+                },
+            ]
+        }
+    )
+    assert [item["evidence_status"] for item in summary["findings"]] == [
+        STATUS_VERIFIED,
+        STATUS_CROSS_WINDOW,
+    ]
+
+
+def test_historical_medgemma_positive_is_retained_but_not_upgraded(tmp_path) -> None:
+    run = tmp_path / "medgemma-schema-v2-old"
+    windows = run / "windows"
+    windows.mkdir(parents=True)
+    result = {
+        "schema_version": "knee-meniscus-finding-v2",
+        "study_purpose": "exploratory_non_diagnostic",
+        "findings": [
+            {
+                "finding_id": "f1",
+                "meniscus": "medial",
+                "segment": "posterior_horn",
+                "tear_status": "probable",
+                "tear_pattern": "horizontal",
+                "orientation": "horizontal",
+                "vascular_zone_estimate": {
+                    "zone": "indeterminate",
+                    "directly_observed_vascularity": False,
+                    "basis": "insufficient_anatomic_resolution",
+                    "confidence": "low",
+                    "limitations": [],
+                },
+                "capsular_relation": {
+                    "distance_mm_estimate": None,
+                    "measurement_method": "not_measurable",
+                    "peripheral_extension": "indeterminate",
+                    "meniscocapsular_separation": "indeterminate",
+                },
+                "surface_extension": {
+                    "superior": "indeterminate",
+                    "inferior": "indeterminate",
+                    "free_edge": "indeterminate",
+                },
+                "stability_features": {
+                    "displaced_fragment": "indeterminate",
+                    "flap": "indeterminate",
+                    "bucket_handle_pattern": "indeterminate",
+                    "imaging_signs_of_mechanical_obstruction": "indeterminate",
+                },
+                "healing_context": {
+                    "extrusion_mm_estimate": None,
+                    "parameniscal_cyst": "indeterminate",
+                    "root_involvement": "indeterminate",
+                    "tissue_quality_imaging_estimate": "indeterminate",
+                    "chronicity_imaging_estimate": "indeterminate",
+                },
+                "imaging_factors_for_specialist_review": [],
+                "traceable_evidence": [],
+                "counter_evidence": [],
+                "limitations": [],
+                "confidence": "low",
+            }
+        ],
+        "global_limitations": [],
+        "treatment_boundary": {
+            "treatment_recommendation_provided": False,
+            "repairability_determined": False,
+            "vascularity_directly_measured": False,
+        },
+    }
+    import json
+
+    (windows / "primary-volume-window-0005.raw.json").write_text(
+        json.dumps(
+            {
+                "window_id": "primary-volume-window-0005",
+                "evidence_ids": ["image-000095"],
+                "result": result,
+            }
+        )
+    )
+    findings, provenance = _historical_medgemma_variants(
+        tmp_path,
+        "medgemma-schema-v2-final",
+        {
+            "image-000095": {
+                "evidence_id": "image-000095",
+                "series_uid": "series",
+                "geometric_index": 94,
+            }
+        },
+        load_profile_by_name("knee-meniscus-v1"),
+    )
+    assert findings[0]["tear_status"] == "probable"
+    finding_id = findings[0]["finding_id"]
+    assert provenance[finding_id]["notPartOfFinalLock"] is True
+    assert provenance[finding_id]["evidenceDispositions"] == []

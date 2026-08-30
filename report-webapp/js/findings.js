@@ -9,8 +9,8 @@ import {
   plainSummary,
   seriesRoleLabel,
 } from "./clinical.js";
-import { badge, element, primaryModel, startPage } from "./page.js";
-import { vascularLine, vascularPanel } from "./vascular.js";
+import { badge, element, modelLabel, startPage } from "./page.js";
+import { vascularLine } from "./vascular.js";
 
 let dialogState = { evidence: [], index: 0, zoom: 1, dictionary: null };
 
@@ -65,6 +65,13 @@ function findingCard(dictionary, finding, index, onOpen) {
   kicker.append(element("span", "model-index", String(index + 1).padStart(2, "0")));
   kicker.append(element("span", null, finding.findingId || ""));
   article.append(kicker);
+
+  if (finding.provenance && finding.provenance.historical) {
+    article.classList.add("historical-finding");
+    article.append(
+      element("p", "historical-warning", t(dictionary, "models.historicalFinding")),
+    );
+  }
 
   const heading = element("div", "model-heading");
   const titleWrap = element("div");
@@ -183,10 +190,10 @@ function renderDialogImage() {
   });
 }
 
-function openDialog(dictionary, finding) {
+function openDialog(dictionary, finding, model) {
   const dialog = document.getElementById("evidence-dialog");
   dialogState = { evidence: finding.evidence, index: 0, zoom: 1, dictionary };
-  document.getElementById("dialog-model").textContent = t(dictionary, "dialog.eyebrow");
+  document.getElementById("dialog-model").textContent = `${modelLabel(dictionary, model)} · ${t(dictionary, "dialog.eyebrow")}`;
   document.getElementById("dialog-title").textContent = findingTitle(dictionary, finding.clinical);
   renderDialogImage();
   if (typeof dialog.showModal === "function") {
@@ -236,11 +243,10 @@ function renderCoverage(bundle) {
     coverage.windows === undefined ? "—" : String(coverage.windows);
 }
 
-function renderGlobalLimitations(dictionary, model) {
-  const host = document.getElementById("global-limitations");
-  host.replaceChildren();
+function globalLimitations(dictionary, model) {
+  const host = element("div", "global-limitations");
   if (!model.globalLimitations || !model.globalLimitations.length) {
-    return;
+    return host;
   }
   host.append(element("h3", null, t(dictionary, "index.globalLimitationsHeading")));
   const list = element("ul", "free-text-list");
@@ -250,30 +256,96 @@ function renderGlobalLimitations(dictionary, model) {
     list.append(entry);
   }
   host.append(list);
+  return host;
+}
+
+function modelSource(dictionary, model) {
+  const provenance = model.provenance || {};
+  const key = provenance.sourceType === "dicom_windows"
+    ? "models.source.dicom"
+    : "models.source.generalist";
+  return t(dictionary, key, {
+    count: provenance.imageCount ?? "—",
+    groups: provenance.windowCount ?? provenance.batchCount ?? "—",
+  });
+}
+
+function modelSummary(dictionary, model) {
+  const positive = model.findings.filter((finding) =>
+    ["suspected", "probable"].includes(finding.clinical.tear_status));
+  const historical = positive.filter((finding) => finding.provenance?.historical);
+  const verified = positive.filter((finding) => !finding.provenance?.historical);
+  const card = element("article", "model-overview-card");
+  card.append(element("h3", null, modelLabel(dictionary, model)));
+  card.append(element("p", "model-source", modelSource(dictionary, model)));
+  card.append(
+    element(
+      "strong",
+      positive.length ? "model-positive" : "model-negative",
+      t(dictionary, "models.positiveCount", { count: positive.length }),
+    ),
+  );
+  if (historical.length) {
+    card.append(
+      element(
+        "p",
+        "historical-summary",
+        t(dictionary, "models.historicalCount", {
+          count: historical.length,
+          final: verified.length,
+        }),
+      ),
+    );
+  }
+  return card;
+}
+
+function modelSection(dictionary, model) {
+  const section = element("section", "model-arm-section");
+  const head = element("div", "model-arm-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow", t(dictionary, "models.independentArm")));
+  title.append(element("h2", null, modelLabel(dictionary, model)));
+  title.append(element("p", "model-source", modelSource(dictionary, model)));
+  head.append(title);
+  head.append(
+    element(
+      "span",
+      "finding-total",
+      t(dictionary, "models.findingCount", { count: model.findings.length }),
+    ),
+  );
+  section.append(head);
+  if (!model.findings.length) {
+    section.append(element("p", "empty-state", t(dictionary, "index.noFindings")));
+  }
+  model.findings.forEach((finding, index) => {
+    section.append(
+      findingCard(dictionary, finding, index, (selected) =>
+        openDialog(dictionary, selected, model)),
+    );
+  });
+  section.append(globalLimitations(dictionary, model));
+  return section;
 }
 
 function render({ bundle, dictionary }) {
-  const model = primaryModel(bundle);
+  const models = bundle.models || [];
   const host = document.getElementById("findings-list");
   host.replaceChildren();
   renderCoverage(bundle);
 
-  const panelHost = document.getElementById("vascular-panel");
-  panelHost.replaceChildren();
-  if (model && model.findings.length) {
-    panelHost.append(vascularPanel(dictionary, model.findings));
-  }
+  const overview = document.getElementById("model-overview");
+  overview.replaceChildren();
+  const overviewGrid = element("div", "model-overview-grid");
+  models.forEach((model) => overviewGrid.append(modelSummary(dictionary, model)));
+  overview.append(overviewGrid);
 
-  if (!model || !model.findings.length) {
+  if (!models.length) {
     host.append(element("p", "empty-state", t(dictionary, "index.noFindings")));
     return;
   }
-  model.findings.forEach((finding, index) => {
-    host.append(
-      findingCard(dictionary, finding, index, (selected) => openDialog(dictionary, selected)),
-    );
-  });
-  renderGlobalLimitations(dictionary, model);
+  models.forEach((model) => host.append(modelSection(dictionary, model)));
   wireViewToggle();
 }
 

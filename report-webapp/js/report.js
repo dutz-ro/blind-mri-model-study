@@ -11,7 +11,7 @@
 
 import { t } from "./i18n.js";
 import { clinicalValue, seriesRoleLabel } from "./clinical.js";
-import { element, formatTimestamp, primaryModel, startPage } from "./page.js";
+import { element, formatTimestamp, modelLabel, startPage } from "./page.js";
 import { vascularPanel, zoneSummarySentence } from "./vascular.js";
 
 const TEAR_PHRASES = {
@@ -195,6 +195,79 @@ function renderHeader(dictionary, bundle, language) {
   });
 }
 
+function positiveFindings(model) {
+  return model.findings.filter((finding) =>
+    ["suspected", "probable"].includes(finding.clinical.tear_status));
+}
+
+function findingFocus(dictionary, findings) {
+  const first = findings[0];
+  if (!first) {
+    return t(dictionary, "models.noPositive");
+  }
+  return t(dictionary, "models.focus", {
+    meniscus: clinicalValue(dictionary, first.clinical.meniscus),
+    segment: clinicalValue(dictionary, first.clinical.segment),
+    pattern: clinicalValue(dictionary, first.clinical.tear_pattern),
+  });
+}
+
+function renderDisagreement(dictionary, bundle) {
+  const host = document.getElementById("report-disagreement");
+  host.replaceChildren();
+  host.append(element("h2", null, t(dictionary, "models.disagreementHeading")));
+  host.append(element("p", "panel-lede", t(dictionary, "models.disagreementLede")));
+  const grid = element("div", "disagreement-cards");
+  for (const model of bundle.models || []) {
+    const positives = positiveFindings(model);
+    const historical = positives.filter((finding) => finding.provenance?.historical);
+    const final = positives.filter((finding) => !finding.provenance?.historical);
+    const card = element("article", "disagreement-card");
+    card.append(element("h3", null, modelLabel(dictionary, model)));
+    card.append(
+      element(
+        "strong",
+        positives.length ? "model-positive" : "model-negative",
+        t(dictionary, "models.positiveCount", { count: positives.length }),
+      ),
+    );
+    card.append(element("p", null, findingFocus(dictionary, positives)));
+    if (historical.length) {
+      card.append(
+        element(
+          "p",
+          "historical-warning",
+          t(dictionary, "models.medgemmaHistory", {
+            historical: historical.length,
+            final: final.length,
+          }),
+        ),
+      );
+    }
+    grid.append(card);
+  }
+  host.append(grid);
+  host.append(element("p", "report-boundary", t(dictionary, "models.noConsensus")));
+}
+
+function renderModelSelector(dictionary, bundle, selectedName, selectModel) {
+  const host = document.getElementById("report-model-select");
+  host.replaceChildren();
+  host.append(element("h2", null, t(dictionary, "models.reportForHeading")));
+  const controls = element("div", "model-selector");
+  for (const model of bundle.models || []) {
+    const button = element(
+      "button",
+      model.model === selectedName ? "active" : null,
+      modelLabel(dictionary, model),
+    );
+    button.type = "button";
+    button.addEventListener("click", () => selectModel(model.model));
+    controls.append(button);
+  }
+  host.append(controls);
+}
+
 function renderResults(dictionary, model) {
   const host = document.getElementById("report-results");
   host.replaceChildren();
@@ -219,7 +292,17 @@ function renderResults(dictionary, model) {
       continue;
     }
     for (const finding of findings) {
-      const paragraph = element("p", "report-sentence");
+      const historical = finding.provenance?.historical;
+      const paragraph = element(
+        "p",
+        historical ? "report-sentence historical-report-sentence" : "report-sentence",
+      );
+      if (historical) {
+        paragraph.append(
+          element("span", "historical-inline-label", t(dictionary, "models.historicalShort")),
+        );
+        paragraph.append(document.createTextNode(" "));
+      }
       paragraph.append(
         element(
           "strong",
@@ -254,23 +337,44 @@ function renderConclusion(dictionary, bundle, model) {
   host.replaceChildren();
   host.append(element("h2", null, t(dictionary, "report.conclusion.heading")));
 
-  const side = clinicalValue(dictionary, study.laterality);
-  const withTear = model.findings.filter((item) =>
-    ["suspected", "probable"].includes(item.clinical.tear_status),
+  host.append(
+    element(
+      "p",
+      "selected-model-note",
+      t(dictionary, "models.selectedReport", { model: modelLabel(dictionary, model) }),
+    ),
   );
+
+  const side = clinicalValue(dictionary, study.laterality);
+  const withTear = positiveFindings(model);
+  const historicalTears = withTear.filter((item) => item.provenance?.historical);
+  const finalTears = withTear.filter((item) => !item.provenance?.historical);
   const undetermined = model.findings.filter((item) =>
     ["indeterminate", "not_evaluable"].includes(item.clinical.tear_status),
   );
 
-  host.append(
-    element(
-      "p",
-      null,
-      withTear.length
-        ? t(dictionary, "report.conclusion.someTear", { side, count: withTear.length })
-        : t(dictionary, "report.conclusion.noTear", { side }),
-    ),
-  );
+  if (historicalTears.length && !finalTears.length) {
+    host.append(
+      element(
+        "p",
+        null,
+        t(dictionary, "models.medgemmaFinalVsHistorical", {
+          side,
+          historical: historicalTears.length,
+        }),
+      ),
+    );
+  } else {
+    host.append(
+      element(
+        "p",
+        null,
+        withTear.length
+          ? t(dictionary, "report.conclusion.someTear", { side, count: withTear.length })
+          : t(dictionary, "report.conclusion.noTear", { side }),
+      ),
+    );
+  }
   if (undetermined.length) {
     host.append(
       element(
@@ -289,7 +393,7 @@ function renderConclusion(dictionary, bundle, model) {
       }),
     ),
   );
-  const windowSummary = study.windowEvidenceSummary || {};
+  const windowSummary = model.evidenceSummary || {};
   const counts = windowSummary.counts || {};
   if (windowSummary.total_findings) {
     host.append(
@@ -297,7 +401,7 @@ function renderConclusion(dictionary, bundle, model) {
         "p",
         null,
         t(dictionary, "report.conclusion.traceability", {
-          verified: counts.verified ?? 0,
+          verified: (counts.verified ?? 0) + (counts.recovered ?? 0),
           total: windowSummary.total_findings,
           percent: windowSummary.evidence_coverage_percent ?? "—",
         }),
@@ -308,14 +412,31 @@ function renderConclusion(dictionary, bundle, model) {
 }
 
 function render({ bundle, dictionary, language }) {
-  const model = primaryModel(bundle);
+  const models = bundle.models || [];
+  let selectedName = window.sessionStorage.getItem("report-model");
+  if (!models.some((model) => model.model === selectedName)) {
+    selectedName = models[0]?.model;
+  }
   renderHeader(dictionary, bundle, language);
-  const panelHost = document.getElementById("report-vascular");
-  panelHost.replaceChildren();
-  if (model && model.findings.length) {
-    panelHost.append(vascularPanel(dictionary, model.findings));
-    renderResults(dictionary, model);
-    renderConclusion(dictionary, bundle, model);
+  renderDisagreement(dictionary, bundle);
+
+  function renderSelected(name) {
+    selectedName = name;
+    window.sessionStorage.setItem("report-model", name);
+    const model = models.find((item) => item.model === name);
+    renderModelSelector(dictionary, bundle, selectedName, renderSelected);
+    const panelHost = document.getElementById("report-vascular");
+    panelHost.replaceChildren();
+    document.getElementById("report-results").replaceChildren();
+    document.getElementById("report-conclusion").replaceChildren();
+    if (model && model.findings.length) {
+      panelHost.append(vascularPanel(dictionary, model.findings));
+      renderResults(dictionary, model);
+      renderConclusion(dictionary, bundle, model);
+    }
+  }
+  if (selectedName) {
+    renderSelected(selectedName);
   }
   renderNotAssessed(dictionary);
 }

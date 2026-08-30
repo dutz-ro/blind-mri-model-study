@@ -63,6 +63,32 @@
       "unverified": "provenance non confirmée"
     }
   },
+  "models": {
+    "names": {
+      "gpt-sol": "GPT-5.6-sol",
+      "grok": "Grok-4.5",
+      "medgemma-dicom": "MedGemma DICOM"
+    },
+    "independentArm": "Bras indépendant",
+    "findingCount": "{count} constatations intégrées",
+    "positiveCount": "{count} variantes suspectées ou probables",
+    "historicalCount": "Parmi celles-ci, {count} sont des variantes MedGemma historiques ; le verrou final contient {final} variantes positives.",
+    "historicalFinding": "Variante positive issue d'une exécution MedGemma antérieure. Elle n'appartient pas au verrou final ; elle est conservée afin de ne pas perdre le désaccord entre les exécutions.",
+    "historicalShort": "VARIANTE HISTORIQUE, HORS DU VERROU FINAL",
+    "source": {
+      "generalist": "{count} images exportées, regroupées en {groups} lots",
+      "dicom": "{count} coupes DICOM, regroupées en {groups} fenêtres contiguës"
+    },
+    "disagreementHeading": "DÉSACCORD ENTRE LES BRAS ET LES EXÉCUTIONS",
+    "disagreementLede": "Les modèles et les exécutions sont présentés séparément. Une ancienne constatation positive n'est pas effacée par une exécution ultérieure, et une exécution ultérieure ne valide pas automatiquement l'ancienne constatation.",
+    "noPositive": "Ce bras ne contient aucune variante suspectée ou probable.",
+    "focus": "Première variante positive affichée : ménisque {meniscus}, {segment}, aspect {pattern}.",
+    "medgemmaHistory": "MedGemma conserve {historical} variantes positives historiques et {final} variantes positives dans le verrou final. Les variantes historiques sont étiquetées et ne sont pas présentées comme le résultat de l'exécution finale.",
+    "medgemmaFinalVsHistorical": "Le verrou MedGemma final pour le genou {side} ne contient aucune variante suspectée ou probable ; l'intégration longitudinale conserve séparément {historical} variantes positives issues d'exécutions antérieures.",
+    "noConsensus": "Il n'existe pas de conclusion commune. GPT et Grok rapportent des variantes positives ; le verrou MedGemma final ne les reproduit pas, tandis que des exécutions MedGemma antérieures ont rapporté des variantes positives avec une traçabilité plus faible.",
+    "reportForHeading": "Compte rendu du bras affiché",
+    "selectedReport": "La conclusion ci-dessous appartient exclusivement au bras {model}."
+  },
   "dialog": {
     "eyebrow": "Preuves",
     "title": "Galerie d'images",
@@ -176,7 +202,7 @@
       "someTear": "L'analyse exploratoire des ménisques du genou {side} a identifié des constatations avec fissuration suspectée ({count}).",
       "indeterminate": "Constatations restant indéterminées en raison de limites de résolution, de plan ou de fenêtre : {count}.",
       "vascular": "Les zones vasculaires rapportées sont des estimations anatomiques : {summary}",
-      "traceability": "Traçabilité : {verified} constatations sur {total} au niveau des fenêtres disposent d'une preuve vérifiée dans leur propre fenêtre ({percent} %), sans citation hors du plan approuvé.",
+      "traceability": "Traçabilité dans ce bras : {verified} constatations intégrées sur {total} disposent d'une preuve vérifiée ou récupérée ({percent} %). Les citations hors lot/fenêtre et les variantes sans citation sont étiquetées séparément.",
       "boundary": "Ce document ne constitue pas un diagnostic, ne détermine pas la réparabilité et ne formule aucune recommandation thérapeutique."
     },
     "print": "Imprimer",

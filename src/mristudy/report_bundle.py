@@ -14,17 +14,22 @@ resolves an original acquisition UID.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .clinical_schema import parse_structured_model_result
 from .medgemma.evidence_locate import export_evidence_images, locate_many
 from .medgemma.evidence_trace import (
     STATUS_CROSS_WINDOW,
     STATUS_RECOVERED,
     STATUS_UNVERIFIED,
     STATUS_VERIFIED,
+    project_result_evidence,
     status_by_finding_id,
 )
+from .medgemma.integration import integrate_series
+from .profiles import StudyProfile, load_profile_by_name, resolve_path
 from .utils import load_json, utc_now
 
 # Vocabulary already used by the viewer legend.
@@ -153,6 +158,31 @@ def evidence_summary_from_multiplanar_provenance(
     }
 
 
+def evidence_summary_from_series_provenance(
+    provenance: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive viewer grades from one batch/window integration matrix."""
+    return evidence_summary_from_multiplanar_provenance(
+        {
+            "groups": [
+                {
+                    "output_finding_provenance": [
+                        {
+                            "output_finding_id": item.get("integrated_finding_id"),
+                            "evidence_dispositions": item.get("evidence_dispositions") or [],
+                            "link_eligible_evidence_ids": item.get(
+                                "link_eligible_evidence_ids"
+                            )
+                            or [],
+                        }
+                        for item in provenance.get("finding_provenance") or []
+                    ]
+                }
+            ]
+        }
+    )
+
+
 def _derive_status(finding: dict[str, Any]) -> str:
     """Fall back to presence of citations when no grade was supplied.
 
@@ -193,6 +223,7 @@ def build_viewer_bundle(
     run_plan: dict[str, Any] | None = None,
     export_images: bool = True,
     evidence_summaries: dict[str, dict[str, Any]] | None = None,
+    model_metadata: dict[str, dict[str, Any]] | None = None,
     study: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble one bundle per model without merging models together.
@@ -225,6 +256,7 @@ def build_viewer_bundle(
     by_id = {item["evidence_id"]: item for item in references}
 
     summaries = evidence_summaries or {}
+    metadata = model_metadata or {}
     models: list[dict[str, Any]] = []
     for name, result in sorted(model_results.items()):
         graded_status = status_by_finding_id(summaries.get(name, {}))
@@ -257,6 +289,9 @@ def build_viewer_bundle(
                     "evidenceStatus": status,
                     "evidenceStatusLabel": STATUS_LABELS.get(status, status),
                     "evidence": evidence,
+                    "provenance": (metadata.get(name, {}).get("findingProvenance") or {}).get(
+                        str(finding.get("finding_id")), {}
+                    ),
                     "clinical": {
                         key: value
                         for key, value in finding.items()
@@ -280,6 +315,11 @@ def build_viewer_bundle(
                 "globalLimitations": result.get("global_limitations") or [],
                 "treatmentBoundary": result.get("treatment_boundary") or {},
                 "evidenceSummary": summaries.get(name, {}),
+                "provenance": {
+                    key: value
+                    for key, value in metadata.get(name, {}).items()
+                    if key != "findingProvenance"
+                },
                 "findings": findings,
             }
         )
@@ -304,9 +344,305 @@ def build_viewer_bundle(
     return bundle
 
 
-def load_locked_model_results(manifests: Path, runs: Path) -> dict[str, dict[str, Any]]:
-    """Collect locked per-model results that carry structured findings."""
+def _evidence_entries(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(item["evidence_id"]): item
+        for item in manifest.get("entries") or []
+        if isinstance(item, dict) and item.get("evidence_id")
+    }
+
+
+def _generalist_run_directory(lock: dict[str, Any], runs: Path) -> Path | None:
+    candidates = []
+    for candidate in sorted(runs.glob("generalists-*")):
+        if all(
+            all(
+                (candidate / arm / str(response.get("structured_result"))).is_file()
+                for response in details.get("responses") or []
+                if response.get("structured_result")
+            )
+            for arm, details in (lock.get("models") or {}).items()
+        ):
+            candidates.append(candidate)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _integrate_generalists(
+    lock: dict[str, Any],
+    runs: Path,
+    provider_plan: dict[str, Any],
+    evidence_map: dict[str, dict[str, Any]],
+    profile: StudyProfile,
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+]:
+    run_dir = _generalist_run_directory(lock, runs)
+    if run_dir is None:
+        return {}, {}, {}
+    batches = {
+        str(item["batch_id"]): item for item in provider_plan.get("batches") or []
+    }
     results: dict[str, dict[str, Any]] = {}
+    summaries: dict[str, dict[str, Any]] = {}
+    metadata: dict[str, dict[str, Any]] = {}
+    for arm, details in sorted((lock.get("models") or {}).items()):
+        windows = []
+        response_model = None
+        finding_provenance: dict[str, Any] = {}
+        for response in details.get("responses") or []:
+            structured_name = response.get("structured_result")
+            batch_id = str(response.get("batch_id"))
+            batch = batches.get(batch_id)
+            if not structured_name or batch is None:
+                continue
+            result = load_json(run_dir / arm / str(structured_name))
+            parse_structured_model_result(result)
+            safe, _, summary = project_result_evidence(
+                result,
+                {
+                    "window_id": batch_id,
+                    "evidence_ids": list(batch.get("exports") or []),
+                    "series_uid": f"generalist-{arm}",
+                },
+                evidence_map,
+                recover=True,
+            )
+            windows.append(
+                {"window_id": batch_id, "result": safe, "evidence_summary": summary}
+            )
+            response_model = response.get("response_model") or response_model
+        if not windows:
+            continue
+        integrated, provenance = integrate_series(
+            arm,
+            f"generalist-selection-{arm}",
+            windows,
+            evidence_map=evidence_map,
+            policy=profile.integration,
+            schema_version=profile.output_schema,
+            body_region=profile.body_region,
+        )
+        for item in provenance.get("finding_provenance") or []:
+            finding_provenance[str(item["integrated_finding_id"])] = {
+                "sourceType": "generalist_batches",
+                "batchIds": item.get("window_ids") or [],
+                "sourceFindingIds": item.get("source_finding_ids") or [],
+                "repeatedAcrossBatches": bool(item.get("repeated_across_windows")),
+            }
+        results[arm] = integrated
+        summaries[arm] = evidence_summary_from_series_provenance(provenance)
+        metadata[arm] = {
+            "sourceType": "generalist_exports",
+            "configuredModel": details.get("configured_model"),
+            "returnedModel": response_model,
+            "run": run_dir.name,
+            "batchCount": len(windows),
+            "imageCount": len(
+                {
+                    export_id
+                    for batch in batches.values()
+                    for export_id in batch.get("exports") or []
+                }
+            ),
+            "findingProvenance": finding_provenance,
+        }
+    return results, summaries, metadata
+
+
+def _historical_medgemma_variants(
+    runs: Path,
+    final_run: str | None,
+    evidence_map: dict[str, dict[str, Any]],
+    profile: StudyProfile,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Preserve positive variants from earlier runs without upgrading them.
+
+    Earlier MedGemma runs are not silently treated as the final lock. Their
+    positive variants are retained as historical observations, deduplicated by
+    the profile claim key, and labelled with every source run and window. Empty
+    citations remain unverified; only a citation the model actually emitted (or
+    misplaced in finding_id) can become evidence.
+    """
+    variants: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for run_dir in sorted(runs.glob("medgemma-schema-v2-*")):
+        if run_dir.name == final_run:
+            continue
+        for path in sorted((run_dir / "windows").glob("*.raw.json")):
+            raw = load_json(path)
+            result = raw.get("result") or {}
+            try:
+                parse_structured_model_result(result)
+            except (ValueError, TypeError, KeyError):
+                continue
+            positives = [
+                finding
+                for finding in result.get("findings") or []
+                if finding.get("tear_status") in profile.integration.positive_statuses
+            ]
+            if not positives:
+                continue
+            projected = {**result, "findings": positives}
+            safe, _, summary = project_result_evidence(
+                projected,
+                {
+                    "window_id": raw.get("window_id") or path.stem,
+                    "evidence_ids": list(raw.get("evidence_ids") or []),
+                    "series_uid": raw.get("series_uid"),
+                },
+                evidence_map,
+                recover=True,
+            )
+            grades = {
+                str(item.get("finding_id")): item
+                for item in summary.get("findings") or []
+            }
+            for finding in safe.get("findings") or []:
+                key = tuple(
+                    resolve_path(finding, field)
+                    for field in profile.integration.claim_key_paths
+                )
+                record = variants.setdefault(
+                    key,
+                    {
+                        "finding": deepcopy(finding),
+                        "sources": [],
+                        "dispositions": [],
+                        "linkEligible": set(),
+                    },
+                )
+                grade = grades.get(str(finding.get("finding_id")), {})
+                record["sources"].append(
+                    {
+                        "run": run_dir.name,
+                        "windowId": raw.get("window_id") or path.stem,
+                        "promptSha256": raw.get("prompt_sha256"),
+                        "decoderPolicy": (raw.get("decoder") or {}).get("policy"),
+                    }
+                )
+                record["dispositions"].extend(grade.get("dispositions") or [])
+                record["linkEligible"].update(
+                    grade.get("link_eligible_evidence_ids") or []
+                )
+                for evidence_key in ("traceable_evidence", "counter_evidence"):
+                    merged = {
+                        item["export_id"]: item
+                        for item in record["finding"].get(evidence_key) or []
+                    }
+                    for item in finding.get(evidence_key) or []:
+                        merged[item["export_id"]] = item
+                    record["finding"][evidence_key] = [
+                        merged[item] for item in sorted(merged)
+                    ]
+
+    findings = []
+    provenance: dict[str, Any] = {}
+    for index, record in enumerate(variants.values(), start=1):
+        finding = record["finding"]
+        finding_id = f"historical-medgemma-variant-{index:02d}"
+        finding["finding_id"] = finding_id
+        findings.append(finding)
+        provenance[finding_id] = {
+            "sourceType": "historical_medgemma_variant",
+            "historical": True,
+            "notPartOfFinalLock": True,
+            "sources": record["sources"],
+            "evidenceDispositions": record["dispositions"],
+            "linkEligibleEvidenceIds": sorted(record["linkEligible"]),
+        }
+    return findings, provenance
+
+
+def _historical_evidence_summary(
+    provenance: dict[str, Any],
+) -> dict[str, Any]:
+    findings = []
+    counts = {
+        STATUS_VERIFIED: 0,
+        STATUS_RECOVERED: 0,
+        STATUS_CROSS_WINDOW: 0,
+        STATUS_UNVERIFIED: 0,
+    }
+    for finding_id, item in provenance.items():
+        dispositions = item.get("evidenceDispositions") or []
+        scopes = {entry.get("scope_status") for entry in dispositions}
+        recovered = any(
+            entry.get("source_status") == "recovered_from_finding_id"
+            for entry in dispositions
+        )
+        if not dispositions or "unknown" in scopes:
+            status = STATUS_UNVERIFIED
+        elif scopes == {"current_window"}:
+            status = STATUS_RECOVERED if recovered else STATUS_VERIFIED
+        else:
+            status = STATUS_CROSS_WINDOW
+        counts[status] += 1
+        findings.append(
+            {
+                "finding_id": finding_id,
+                "evidence_status": status,
+                "dispositions": dispositions,
+                "link_eligible_evidence_ids": item.get("linkEligibleEvidenceIds") or [],
+            }
+        )
+    return {
+        "policy": "historical-medgemma-variant-traceability-v1",
+        "total_findings": len(findings),
+        "counts": counts,
+        "traceable_findings": len(findings) - counts[STATUS_UNVERIFIED],
+        "evidence_coverage_percent": round(
+            100.0
+            * (len(findings) - counts[STATUS_UNVERIFIED])
+            / max(1, len(findings)),
+            2,
+        ),
+        "findings": findings,
+    }
+
+
+def load_locked_model_bundle_inputs(
+    manifests: Path,
+    runs: Path,
+    state: Path | None = None,
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+]:
+    """Collect locked arms plus explicitly labelled historical variants."""
+    results: dict[str, dict[str, Any]] = {}
+    summaries: dict[str, dict[str, Any]] = {}
+    metadata: dict[str, dict[str, Any]] = {}
+    evidence_manifest_path = manifests / "medgemma-evidence-map.json"
+    evidence_manifest = (
+        load_json(evidence_manifest_path) if evidence_manifest_path.exists() else {}
+    )
+    evidence_map = _evidence_entries(evidence_manifest)
+    study_manifest_path = manifests / "study.json"
+    study_manifest = (
+        load_json(study_manifest_path)
+        if study_manifest_path.exists()
+        else {"profile": "knee-meniscus-v1"}
+    )
+    profile = load_profile_by_name(str(study_manifest["profile"]))
+
+    generalist_lock_path = manifests / "generalist-results-lock.json"
+    provider_plan_path = state / "provider-egress-plan.json" if state else None
+    if generalist_lock_path.exists() and provider_plan_path and provider_plan_path.exists():
+        generalist_results, generalist_summaries, generalist_metadata = (
+            _integrate_generalists(
+                load_json(generalist_lock_path),
+                runs,
+                load_json(provider_plan_path),
+                evidence_map,
+                profile,
+            )
+        )
+        results.update(generalist_results)
+        summaries.update(generalist_summaries)
+        metadata.update(generalist_metadata)
+
     medgemma_lock = manifests / "medgemma-results-lock.json"
     if medgemma_lock.exists():
         lock = load_json(medgemma_lock)
@@ -315,5 +651,32 @@ def load_locked_model_results(manifests: Path, runs: Path) -> dict[str, dict[str
         if run_id and isinstance(pointer, str):
             candidate = runs / run_id / pointer
             if candidate.exists():
-                results["medgemma-dicom"] = load_json(candidate)
+                result = load_json(candidate)
+                historical, historical_provenance = _historical_medgemma_variants(
+                    runs, str(run_id), evidence_map, profile
+                )
+                result["findings"] = list(result.get("findings") or []) + historical
+                results["medgemma-dicom"] = result
+                metadata["medgemma-dicom"] = {
+                    "sourceType": "dicom_windows",
+                    "run": run_id,
+                    "windowCount": lock.get("window_count"),
+                    "imageCount": (lock.get("coverage") or {}).get(
+                        "analyzed_unique_slices"
+                    ),
+                    "historicalVariantCount": len(historical),
+                    "historicalVariantsAreNotFinalLock": True,
+                    "findingProvenance": historical_provenance,
+                }
+                summaries["medgemma-dicom-historical"] = _historical_evidence_summary(
+                    historical_provenance
+                )
+    return results, summaries, metadata
+
+
+def load_locked_model_results(
+    manifests: Path, runs: Path, state: Path | None = None
+) -> dict[str, dict[str, Any]]:
+    """Compatibility wrapper returning only the structured model results."""
+    results, _, _ = load_locked_model_bundle_inputs(manifests, runs, state)
     return results

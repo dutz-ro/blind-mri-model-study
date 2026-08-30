@@ -63,6 +63,32 @@
       "unverified": "proveniență neconfirmată"
     }
   },
+  "models": {
+    "names": {
+      "gpt-sol": "GPT-5.6-sol",
+      "grok": "Grok-4.5",
+      "medgemma-dicom": "MedGemma DICOM"
+    },
+    "independentArm": "Braț independent",
+    "findingCount": "{count} constatări integrate",
+    "positiveCount": "{count} variante suspectate sau probabile",
+    "historicalCount": "Dintre acestea, {count} sunt variante MedGemma istorice; lock-ul final conține {final} variante pozitive.",
+    "historicalFinding": "Variantă pozitivă dintr-o rulare MedGemma anterioară. Nu aparține lock-ului final; este păstrată pentru a nu pierde dezacordul dintre rulări.",
+    "historicalShort": "VARIANTĂ ISTORICĂ, ÎN AFARA LOCK-ULUI FINAL",
+    "source": {
+      "generalist": "{count} imagini exportate, grupate în {groups} batch-uri",
+      "dicom": "{count} secțiuni DICOM, grupate în {groups} ferestre contigue"
+    },
+    "disagreementHeading": "DEZACORD ÎNTRE BRAȚE ȘI RULĂRI",
+    "disagreementLede": "Modelele și rulările sunt prezentate separat. O constatare pozitivă veche nu este ștearsă de o rulare ulterioară, iar o rulare ulterioară nu validează automat constatarea veche.",
+    "noPositive": "Nu există nicio variantă suspectată sau probabilă în acest braț.",
+    "focus": "Prima variantă pozitivă afișată: menisc {meniscus}, {segment}, tipar {pattern}.",
+    "medgemmaHistory": "MedGemma păstrează {historical} variante pozitive istorice și {final} variante pozitive în lock-ul final. Variantele istorice sunt etichetate și nu sunt prezentate ca rezultat al rulării finale.",
+    "medgemmaFinalVsHistorical": "Lock-ul MedGemma final pentru genunchiul {side} nu conține o variantă suspectată sau probabilă; integrarea longitudinală păstrează separat {historical} variante pozitive din rulări anterioare.",
+    "noConsensus": "Nu există verdict comun. GPT și Grok raportează variante pozitive; lock-ul MedGemma final nu le reproduce, iar rulările MedGemma anterioare au raportat variante pozitive cu trasabilitate mai slabă.",
+    "reportForHeading": "Raportul brațului afișat",
+    "selectedReport": "Concluzia de mai jos aparține exclusiv brațului {model}."
+  },
   "dialog": {
     "eyebrow": "Dovezi",
     "title": "Galerie de imagini",
@@ -176,7 +202,7 @@
       "someTear": "Analiza exploratorie a meniscurilor genunchiului {side} a identificat constatări cu suspiciune de fisurare ({count}).",
       "indeterminate": "Constatări rămase nedeterminate din cauza limitărilor de rezoluție, plan sau fereastră: {count}.",
       "vascular": "Zonele vasculare raportate sunt estimări anatomice: {summary}",
-      "traceability": "Trasabilitate: {verified} din {total} constatări la nivel de fereastră au dovadă verificată în fereastra proprie ({percent}%), fără citări din afara planului aprobat.",
+      "traceability": "Trasabilitate în acest braț: {verified} din {total} constatări integrate au dovadă verificată sau recuperată ({percent}%). Citările din afara batch-ului/ferestrei și variantele fără citări sunt etichetate separat.",
       "boundary": "Documentul nu constituie diagnostic, nu determină reparabilitatea și nu formulează recomandări de tratament."
     },
     "print": "Tipărește",

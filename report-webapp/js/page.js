@@ -28,6 +28,11 @@ export function primaryModel(bundle) {
   return models.length ? models[0] : null;
 }
 
+export function modelLabel(dictionary, model) {
+  const translated = t(dictionary, `models.names.${model.model}`);
+  return translated === `models.names.${model.model}` ? model.model : translated;
+}
+
 export function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) {
